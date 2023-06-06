@@ -39,11 +39,21 @@ class FS_USER final : public ServiceFramework<FS_USER, ClientSlot> {
 public:
     explicit FS_USER(Core::System& system);
 
-    // On real HW this is part of FS:Reg. But since that module is only used by loader and pm, which
+    // On real HW this is part of FSReg. But since that module is only used by loader and pm, which
     // we HLEed, we can just directly use it here
-    void Register(u32 process_id, u64 program_id, const std::string& filepath);
+    void RegisterProgramInfo(u32 process_id, u64 program_id, const std::string& filepath);
 
     std::string GetCurrentGamecardPath() const;
+	
+    struct ProductInfo {
+        std::array<u8, 0x10> product_code;
+        u16_le maker_code;
+        u16_le remaster_version;
+    };
+
+    void RegisterProductInfo(u32 process_id, const ProductInfo& product_info);
+
+    bool GetProductInfo(u32 process_id, ProductInfo& out_product_info);
 
 private:
     void Initialize(Kernel::HLERequestContext& ctx);
@@ -489,7 +499,18 @@ private:
      *      5 : Duplicate data
      */
     void GetFormatInfo(Kernel::HLERequestContext& ctx);
-
+	
+	/**
+     * FS_User::GetProductInfo service function.
+     *  Inputs:
+     *      0 : 0x082E0040
+     *      1 : Process ID
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     *      2-6 : Product info
+     */
+    void GetProductInfo(Kernel::HLERequestContext& ctx);
+	
     /**
      * FS_User::GetProgramLaunchInfo service function.
      *  Inputs:

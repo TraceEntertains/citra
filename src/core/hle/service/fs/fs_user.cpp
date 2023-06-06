@@ -673,6 +673,27 @@ void FS_USER::GetFormatInfo(Kernel::HLERequestContext& ctx) {
     rb.Push<bool>(format_info->duplicate_data != 0);
 }
 
+void FS_USER::GetProductInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x82E, 1, 0);
+
+    u32 process_id = rp.Pop<u32>();
+
+    LOG_DEBUG(Service_FS, "process_id={}", process_id);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(6, 0);
+
+    ProductInfo product_info;
+    if (!GetProductInfo(process_id, product_info)) {
+        rb.Push(ResultCode(FileSys::ErrCodes::ArchiveNotMounted, ErrorModule::FS,
+                           ErrorSummary::NotFound, ErrorLevel::Status));
+        rb.Skip(5, false);
+        return;
+    }
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<ProductInfo>(product_info);
+}
+
 void FS_USER::GetProgramLaunchInfo(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx, 0x82F, 1, 0);
 
@@ -825,11 +846,25 @@ void FS_USER::GetSaveDataSecureValue(Kernel::HLERequestContext& ctx) {
     rb.Push<u64>(0);      // the secure value
 }
 
-void FS_USER::Register(u32 process_id, u64 program_id, const std::string& filepath) {
+void FS_USER::RegisterProductInfo(u32 process_id, u64 program_id, const std::string& filepath) {
     const MediaType media_type = GetMediaTypeFromPath(filepath);
     program_info_map.insert_or_assign(process_id, ProgramInfo{program_id, media_type});
     if (media_type == MediaType::GameCard) {
         current_gamecard_path = filepath;
+    }
+}
+
+void FS_USER::RegisterProductInfo(u32 process_id, const ProductInfo& product_info) {
+    product_info_map.insert_or_assign(process_id, product_info);
+}
+
+bool FS_USER::GetProductInfo(u32 process_id, ProductInfo& out_product_info) {
+    auto it = product_info_map.find(process_id);
+    if (it != product_info_map.end()) {
+        out_product_info = it->second;
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -938,7 +973,7 @@ FS_USER::FS_USER(Core::System& system)
         {IPC::MakeHeader(0x082B, 3, 2), nullptr, "CardNorDirectRead_4xIO"},
         {IPC::MakeHeader(0x082C, 2, 2), nullptr, "CardNorDirectCpuWriteWithoutVerify"},
         {IPC::MakeHeader(0x082D, 1, 0), nullptr, "CardNorDirectSectorEraseWithoutVerify"},
-        {IPC::MakeHeader(0x082E, 1, 0), nullptr, "GetProductInfo"},
+        {IPC::MakeHeader(0x082E, 1, 0), &FS_USER::GetProductInfo, "GetProductInfo"},
         {IPC::MakeHeader(0x082F, 1, 0), &FS_USER::GetProgramLaunchInfo, "GetProgramLaunchInfo"},
         {IPC::MakeHeader(0x0830, 6, 2), &FS_USER::ObsoletedCreateExtSaveData, "Obsoleted_3_0_CreateExtSaveData"},
         {IPC::MakeHeader(0x0831, 6, 0), nullptr, "CreateSharedExtSaveData"},
