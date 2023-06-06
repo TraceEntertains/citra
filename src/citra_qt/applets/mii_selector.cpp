@@ -27,7 +27,7 @@ QtMiiSelectorDialog::QtMiiSelectorDialog(QWidget* parent, QtMiiSelector* mii_sel
                        ? tr("Mii Selector")
                        : QString::fromStdString(config.title));
 
-    miis.push_back(HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data);
+    miis.push_back(HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data.GetMiiData());
     combobox->addItem(tr("Standard Mii"));
     for (const auto& mii : Frontend::LoadMiis()) {
         miis.push_back(mii);
@@ -67,6 +67,5 @@ void QtMiiSelector::OpenDialog() {
              dialog.return_code, index);
 
     const auto mii_data = dialog.miis.at(index);
-    Finalize(dialog.return_code,
-             dialog.return_code == 0 ? std::move(mii_data) : HLE::Applets::MiiData{});
+    Finalize(dialog.return_code, dialog.return_code == 0 ? std::move(mii_data) : Mii::MiiData{});
 }
