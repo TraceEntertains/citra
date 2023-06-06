@@ -1,6 +1,8 @@
 add_library(network STATIC
     announce_multiplayer_session.cpp
     announce_multiplayer_session.h
+    network_clients/nasc.cpp
+    network_clients/nasc.h
     network.cpp
     network.h
     network_settings.cpp
