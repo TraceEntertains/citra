@@ -292,4 +292,4 @@ private:
 #pragma pack(pop)
 static_assert(sizeof(ChecksummedMiiData) == 0x60,
               "ChecksummedMiiData structure has incorrect size");
-}
+} // namespace Mii
