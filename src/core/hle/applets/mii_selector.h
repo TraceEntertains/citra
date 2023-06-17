@@ -49,7 +49,7 @@ struct MiiResult {
     u32_be return_code;
     u32_be is_guest_mii_selected;
     u32_be selected_guest_mii_index;
-    Mii:ChecksummedMiiData selected_mii_data;
+    Mii::ChecksummedMiiData selected_mii_data;
     std::array<u16_le, 0xC> guest_mii_name;
 };
 static_assert(sizeof(MiiResult) == 0x84, "MiiResult structure has incorrect size");
