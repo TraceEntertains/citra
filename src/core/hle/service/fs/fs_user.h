@@ -631,6 +631,8 @@ private:
     std::unordered_map<u32, ProgramInfo> program_info_map;
     std::string current_gamecard_path;
 
+    std::unordered_map<u32, ProductInfo> product_info_map;
+
     u32 priority = -1; ///< For SetPriority and GetPriority service functions
 
     Core::System& system;

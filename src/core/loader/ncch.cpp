@@ -155,7 +155,7 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
         auto fs_user =
             Core::System::GetInstance().ServiceManager().GetService<Service::FS::FS_USER>(
                 "fs:USER");
-        fs_user->Register(process->process_id, process->codeset->program_id, filepath);
+        fs_user->RegisterProgramInfo(process->process_id, process->codeset->program_id, filepath);
 		
 		Service::FS::FS_USER::ProductInfo product_info{};
         memcpy(product_info.product_code.data(), overlay_ncch->ncch_header.product_code,

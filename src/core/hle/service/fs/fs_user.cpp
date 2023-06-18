@@ -846,7 +846,7 @@ void FS_USER::GetSaveDataSecureValue(Kernel::HLERequestContext& ctx) {
     rb.Push<u64>(0);      // the secure value
 }
 
-void FS_USER::RegisterProductInfo(u32 process_id, u64 program_id, const std::string& filepath) {
+void FS_USER::RegisterProgramInfo(u32 process_id, u64 program_id, const std::string& filepath) {
     const MediaType media_type = GetMediaTypeFromPath(filepath);
     program_info_map.insert_or_assign(process_id, ProgramInfo{program_id, media_type});
     if (media_type == MediaType::GameCard) {

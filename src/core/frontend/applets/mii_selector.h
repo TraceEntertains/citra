@@ -50,7 +50,7 @@ protected:
     MiiSelectorData data;
 };
 
-std::vector<HLE::Applets::MiiData> LoadMiis();
+std::vector<Mii::MiiData> LoadMiis();
 
 class DefaultMiiSelector final : public MiiSelector {
 public:
