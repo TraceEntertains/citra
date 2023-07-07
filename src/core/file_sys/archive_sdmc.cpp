@@ -13,9 +13,6 @@
 #include "core/file_sys/errors.h"
 #include "core/file_sys/path_parser.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
-
 SERIALIZE_EXPORT_IMPL(FileSys::SDMCArchive)
 SERIALIZE_EXPORT_IMPL(FileSys::ArchiveFactory_SDMC)
 
@@ -111,8 +108,7 @@ ResultVal<std::unique_ptr<FileBackend>> SDMCArchive::OpenFileBase(const Path& pa
     }
 
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<SDMCDelayGenerator>();
-    auto disk_file = std::make_unique<DiskFile>(std::move(file), mode, std::move(delay_generator));
-    return MakeResult<std::unique_ptr<FileBackend>>(std::move(disk_file));
+    return std::make_unique<DiskFile>(std::move(file), mode, std::move(delay_generator));
 }
 
 ResultCode SDMCArchive::DeleteFile(const Path& path) const {
@@ -361,8 +357,7 @@ ResultVal<std::unique_ptr<DirectoryBackend>> SDMCArchive::OpenDirectory(const Pa
         break; // Expected 'success' case
     }
 
-    auto directory = std::make_unique<DiskDirectory>(full_path);
-    return MakeResult<std::unique_ptr<DirectoryBackend>>(std::move(directory));
+    return std::make_unique<DiskDirectory>(full_path);
 }
 
 u64 SDMCArchive::GetFreeBytes() const {
@@ -393,8 +388,7 @@ bool ArchiveFactory_SDMC::Initialize() {
 ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_SDMC::Open(const Path& path,
                                                                      u64 program_id) {
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<SDMCDelayGenerator>();
-    auto archive = std::make_unique<SDMCArchive>(sdmc_directory, std::move(delay_generator));
-    return MakeResult<std::unique_ptr<ArchiveBackend>>(std::move(archive));
+    return std::make_unique<SDMCArchive>(sdmc_directory, std::move(delay_generator));
 }
 
 ResultCode ArchiveFactory_SDMC::Format(const Path& path,
@@ -408,7 +402,7 @@ ResultVal<ArchiveFormatInfo> ArchiveFactory_SDMC::GetFormatInfo(const Path& path
                                                                 u64 program_id) const {
     // TODO(Subv): Implement
     LOG_ERROR(Service_FS, "Unimplemented GetFormatInfo archive {}", GetName());
-    return ResultCode(-1);
+    return RESULT_UNKNOWN;
 }
 } // namespace FileSys
 

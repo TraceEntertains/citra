@@ -5,15 +5,13 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <boost/serialization/export.hpp>
 #include <boost/serialization/string.hpp>
 #include "common/common_types.h"
 #include "core/file_sys/archive_backend.h"
 #include "core/hle/result.h"
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
 
 namespace FileSys {
 
@@ -41,7 +39,7 @@ public:
      * @param icon_data Binary data of the icon
      * @param icon_size Size of the icon data
      */
-    void WriteIcon(const Path& path, const u8* icon_data, std::size_t icon_size);
+    void WriteIcon(const Path& path, std::span<const u8> icon);
 
 private:
     bool shared; ///< Whether this archive represents an ExtSaveData archive or a SharedExtSaveData

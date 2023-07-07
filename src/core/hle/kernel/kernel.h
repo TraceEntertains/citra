@@ -8,6 +8,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -90,7 +91,7 @@ union CoreVersion {
         major.Assign(major_ver);
     }
 
-    u32 raw;
+    u32 raw = 0;
     BitField<8, 8, u32> revision;
     BitField<16, 8, u32> minor;
     BitField<24, 8, u32> major;
@@ -230,7 +231,7 @@ public:
     /// Retrieves a process from the current list of processes.
     std::shared_ptr<Process> GetProcessById(u32 process_id) const;
 
-    const std::vector<std::shared_ptr<Process>>& GetProcessList() const {
+    std::span<const std::shared_ptr<Process>> GetProcessList() const {
         return process_list;
     }
 

@@ -40,7 +40,6 @@ if (MSVC)
         /Zo
         /permissive-
         /EHsc
-        /std:c++latest
         /utf-8
         /volatile:iso
         /Zc:externConstexpr
@@ -85,7 +84,7 @@ if (MSVC)
     # Since MSVC's debugging information is not very deterministic, so we have to disable it
     # when using ccache or other caching tools
     if (CITRA_USE_CCACHE OR CITRA_USE_PRECOMPILED_HEADERS)
-    # Precompiled headers are deleted if not using /Z7. See https://github.com/nanoant/CMakePCHCompiler/issues/21
+        # Precompiled headers are deleted if not using /Z7. See https://github.com/nanoant/CMakePCHCompiler/issues/21
         add_compile_options(/Z7)
     else()
         add_compile_options(/Zi)
@@ -102,17 +101,12 @@ else()
         -Wno-attributes
     )
 
-    if (APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL Clang)
-        add_compile_options("-stdlib=libc++")
+    if (CITRA_WARNINGS_AS_ERRORS)
+        add_compile_options(-Werror)
     endif()
 
-    # Set file offset size to 64 bits.
-    #
-    # On modern Unixes, this is typically already the case. The lone exception is
-    # glibc, which may default to 32 bits. glibc allows this to be configured
-    # by setting _FILE_OFFSET_BITS.
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MINGW)
-        add_definitions(-D_FILE_OFFSET_BITS=64)
+    if (APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL Clang)
+        add_compile_options("-stdlib=libc++")
     endif()
 
     if (MINGW)
@@ -120,14 +114,16 @@ else()
         if (COMPILE_WITH_DWARF)
             add_compile_options("-gdwarf")
         endif()
-
-        if (MINGW_STATIC_BUILD)
-            add_definitions(-DQT_STATICPLUGIN)
-            add_compile_options("-static")
-        endif()
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MINGW)
+        # Set file offset size to 64 bits.
+        #
+        # On modern Unixes, this is typically already the case. The lone exception is
+        # glibc, which may default to 32 bits. glibc allows this to be configured
+        # by setting _FILE_OFFSET_BITS.
+        add_definitions(-D_FILE_OFFSET_BITS=64)
+
         # GNU ar: Create thin archive files.
         # Requires binutils-2.19 or later.
         set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> qcTP <TARGET> <LINK_FLAGS> <OBJECTS>")

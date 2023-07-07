@@ -64,9 +64,9 @@ public:
 
     u16 RecvData(u32 register_number);
     bool RecvDataIsReady(u32 register_number) const;
-    std::vector<u8> PipeRead(DspPipe pipe_number, u32 length);
+    std::vector<u8> PipeRead(DspPipe pipe_number, std::size_t length);
     std::size_t GetPipeReadableSize(DspPipe pipe_number) const;
-    void PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer);
+    void PipeWrite(DspPipe pipe_number, std::span<const u8> buffer);
 
     std::array<u8, Memory::DSP_RAM_SIZE>& GetDspMemory();
 
@@ -202,7 +202,7 @@ bool DspHle::Impl::RecvDataIsReady(u32 register_number) const {
     return true;
 }
 
-std::vector<u8> DspHle::Impl::PipeRead(DspPipe pipe_number, u32 length) {
+std::vector<u8> DspHle::Impl::PipeRead(DspPipe pipe_number, std::size_t length) {
     const std::size_t pipe_index = static_cast<std::size_t>(pipe_number);
 
     if (pipe_index >= num_dsp_pipe) {
@@ -244,7 +244,7 @@ size_t DspHle::Impl::GetPipeReadableSize(DspPipe pipe_number) const {
     return pipe_data[pipe_index].size();
 }
 
-void DspHle::Impl::PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer) {
+void DspHle::Impl::PipeWrite(DspPipe pipe_number, std::span<const u8> buffer) {
     switch (pipe_number) {
     case DspPipe::Audio: {
         if (buffer.size() != 4) {
@@ -486,7 +486,7 @@ void DspHle::SetSemaphore(u16 semaphore_value) {
     // Do nothing in HLE
 }
 
-std::vector<u8> DspHle::PipeRead(DspPipe pipe_number, u32 length) {
+std::vector<u8> DspHle::PipeRead(DspPipe pipe_number, std::size_t length) {
     return impl->PipeRead(pipe_number, length);
 }
 
@@ -494,7 +494,7 @@ size_t DspHle::GetPipeReadableSize(DspPipe pipe_number) const {
     return impl->GetPipeReadableSize(pipe_number);
 }
 
-void DspHle::PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer) {
+void DspHle::PipeWrite(DspPipe pipe_number, std::span<const u8> buffer) {
     impl->PipeWrite(pipe_number, buffer);
 }
 
@@ -506,7 +506,7 @@ void DspHle::SetServiceToInterrupt(std::weak_ptr<DSP_DSP> dsp) {
     impl->SetServiceToInterrupt(std::move(dsp));
 }
 
-void DspHle::LoadComponent(const std::vector<u8>& component_data) {
+void DspHle::LoadComponent(std::span<const u8> component_data) {
     // HLE doesn't need DSP program. Only log some info here
     LOG_INFO(Service_DSP, "Firmware hash: {:#018x}",
              Common::ComputeHash64(component_data.data(), component_data.size()));

@@ -56,35 +56,6 @@ std::condition_variable running_cv;
 
 } // Anonymous namespace
 
-static bool DisplayAlertMessage(const char* caption, const char* text, bool yes_no) {
-    JNIEnv* env = IDCache::GetEnvForThread();
-
-    // Execute the Java method.
-    jboolean result = env->CallStaticBooleanMethod(
-        IDCache::GetNativeLibraryClass(), IDCache::GetDisplayAlertMsg(), ToJString(env, caption),
-        ToJString(env, text), yes_no ? JNI_TRUE : JNI_FALSE);
-
-    return result != JNI_FALSE;
-}
-
-static std::string DisplayAlertPrompt(const char* caption, const char* text, int buttonConfig) {
-    JNIEnv* env = IDCache::GetEnvForThread();
-
-    jstring value = reinterpret_cast<jstring>(env->CallStaticObjectMethod(
-        IDCache::GetNativeLibraryClass(), IDCache::GetDisplayAlertPrompt(), ToJString(env, caption),
-        ToJString(env, text), buttonConfig));
-
-    return GetJString(env, value);
-}
-
-static int AlertPromptButton() {
-    JNIEnv* env = IDCache::GetEnvForThread();
-
-    // Execute the Java method.
-    return static_cast<int>(env->CallStaticIntMethod(IDCache::GetNativeLibraryClass(),
-                                                     IDCache::GetAlertPromptButton()));
-}
-
 static jobject ToJavaCoreError(Core::System::ResultStatus result) {
     static const std::map<Core::System::ResultStatus, const char*> CoreErrorNameMap{
         {Core::System::ResultStatus::ErrorSystemFiles, "ErrorSystemFiles"},
@@ -170,7 +141,7 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
         app_loader->ReadProgramId(program_id);
         GameSettings::LoadOverrides(program_id);
     }
-    Settings::Apply();
+    system.ApplySettings();
     Settings::LogSettings();
 
     Camera::RegisterFactory("image", std::make_unique<Camera::StillImage::Factory>());
@@ -467,10 +438,8 @@ void Java_org_citra_citra_1emu_NativeLibrary_CreateConfigFile(JNIEnv* env,
 
 void Java_org_citra_citra_1emu_NativeLibrary_CreateLogFile(JNIEnv* env,
                                                            [[maybe_unused]] jclass clazz) {
-    Log::RemoveBackend(Log::FileBackend::Name());
-    FileUtil::CreateFullPath(FileUtil::GetUserPath(FileUtil::UserPath::LogDir));
-    Log::AddBackend(std::make_unique<Log::FileBackend>(
-        FileUtil::GetUserPath(FileUtil::UserPath::LogDir) + LOG_FILE));
+    Common::Log::Initialize();
+    Common::Log::Start();
     LOG_INFO(Frontend, "Logging backend initialised");
 }
 
@@ -503,7 +472,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_ReloadSettings(JNIEnv* env,
         GameSettings::LoadOverrides(program_id);
     }
 
-    Settings::Apply();
+    system.ApplySettings();
 }
 
 jstring Java_org_citra_citra_1emu_NativeLibrary_GetUserSetting(JNIEnv* env,
@@ -598,20 +567,16 @@ void Java_org_citra_citra_1emu_NativeLibrary_ReloadCameraDevices(JNIEnv* env, jc
 }
 
 jboolean Java_org_citra_citra_1emu_NativeLibrary_LoadAmiibo(JNIEnv* env, jclass clazz,
-                                                            jbyteArray bytes) {
+                                                            jstring j_file) {
+    std::string filepath = GetJString(env, j_file);
     Core::System& system{Core::System::GetInstance()};
     Service::SM::ServiceManager& sm = system.ServiceManager();
     auto nfc = sm.GetService<Service::NFC::Module::Interface>("nfc:u");
-    if (nfc == nullptr || env->GetArrayLength(bytes) != sizeof(Service::NFC::AmiiboData)) {
+    if (nfc == nullptr) {
         return static_cast<jboolean>(false);
     }
 
-    Service::NFC::AmiiboData amiibo_data{};
-    env->GetByteArrayRegion(bytes, 0, sizeof(Service::NFC::AmiiboData),
-                            reinterpret_cast<jbyte*>(&amiibo_data));
-
-    nfc->LoadAmiibo(amiibo_data);
-    return static_cast<jboolean>(true);
+    return static_cast<jboolean>(nfc->LoadAmiibo(filepath));
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_RemoveAmiibo(JNIEnv* env, jclass clazz) {

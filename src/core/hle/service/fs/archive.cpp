@@ -63,7 +63,7 @@ ResultVal<ArchiveHandle> ArchiveManager::OpenArchive(ArchiveIdCode id_code,
         ++next_handle;
     }
     handle_map.emplace(next_handle, std::move(res));
-    return MakeResult(next_handle++);
+    return next_handle++;
 }
 
 ResultCode ArchiveManager::CloseArchive(ArchiveHandle handle) {
@@ -103,7 +103,7 @@ ArchiveManager::OpenFileFromArchive(ArchiveHandle archive_handle, const FileSys:
     }
 
     auto file = std::make_shared<File>(system.Kernel(), std::move(backend).Unwrap(), path);
-    return std::make_pair(MakeResult(std::move(file)), open_timeout_ns);
+    return std::make_pair(std::move(file), open_timeout_ns);
 }
 
 ResultCode ArchiveManager::DeleteFileFromArchive(ArchiveHandle archive_handle,
@@ -197,8 +197,7 @@ ResultVal<std::shared_ptr<Directory>> ArchiveManager::OpenDirectoryFromArchive(
         return backend.Code();
     }
 
-    auto directory = std::make_shared<Directory>(std::move(backend).Unwrap(), path);
-    return MakeResult(std::move(directory));
+    return std::make_shared<Directory>(std::move(backend).Unwrap(), path);
 }
 
 ResultVal<u64> ArchiveManager::GetFreeBytesInArchive(ArchiveHandle archive_handle) {
@@ -206,7 +205,7 @@ ResultVal<u64> ArchiveManager::GetFreeBytesInArchive(ArchiveHandle archive_handl
     if (archive == nullptr) {
         return FileSys::ERR_INVALID_ARCHIVE_HANDLE;
     }
-    return MakeResult(archive->GetFreeBytes());
+    return archive->GetFreeBytes();
 }
 
 ResultCode ArchiveManager::FormatArchive(ArchiveIdCode id_code,
@@ -231,7 +230,7 @@ ResultVal<FileSys::ArchiveFormatInfo> ArchiveManager::GetArchiveFormatInfo(
 }
 
 ResultCode ArchiveManager::CreateExtSaveData(MediaType media_type, u32 high, u32 low,
-                                             const std::vector<u8>& smdh_icon,
+                                             std::span<const u8> smdh_icon,
                                              const FileSys::ArchiveFormatInfo& format_info,
                                              u64 program_id) {
     // Construct the binary path to the archive first
@@ -248,10 +247,11 @@ ResultCode ArchiveManager::CreateExtSaveData(MediaType media_type, u32 high, u32
     auto ext_savedata = static_cast<FileSys::ArchiveFactory_ExtSaveData*>(archive->second.get());
 
     ResultCode result = ext_savedata->Format(path, format_info, program_id);
-    if (result.IsError())
+    if (result.IsError()) {
         return result;
+    }
 
-    ext_savedata->WriteIcon(path, smdh_icon.data(), smdh_icon.size());
+    ext_savedata->WriteIcon(path, smdh_icon);
     return RESULT_SUCCESS;
 }
 
@@ -314,7 +314,7 @@ ResultVal<ArchiveResource> ArchiveManager::GetArchiveResource(MediaType media_ty
     resource.cluster_size_in_bytes = 16384;
     resource.partition_capacity_in_clusters = 0x80000; // 8GiB capacity
     resource.free_space_in_clusters = 0x80000;         // 8GiB free
-    return MakeResult(resource);
+    return resource;
 }
 
 void ArchiveManager::RegisterArchiveTypes() {

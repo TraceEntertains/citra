@@ -36,6 +36,7 @@ enum class LayoutOption : u32 {
 #ifndef ANDROID
     SeparateWindows,
 #endif
+    HybridScreen,
     // Similiar to default, but better for mobile devices in portrait mode. Top screen in clamped to
     // the top of the frame, and the bottom screen is enlarged to match the top screen.
     MobilePortrait,
@@ -432,6 +433,7 @@ struct Values {
         "graphics_api"};
     Setting<bool> use_gles{false, "use_gles"};
     Setting<bool> renderer_debug{false, "renderer_debug"};
+    Setting<bool> dump_command_buffers{false, "dump_command_buffers"};
     SwitchableSetting<bool> use_hw_shader{true, "use_hw_shader"};
     SwitchableSetting<bool> use_disk_shader_cache{true, "use_disk_shader_cache"};
     SwitchableSetting<bool> shaders_accurate_mul{true, "shaders_accurate_mul"};
@@ -523,7 +525,6 @@ void SetConfiguringGlobal(bool is_global);
 
 float Volume();
 
-void Apply();
 void LogSettings();
 
 // Restore the global state of all applicable settings in the Values struct

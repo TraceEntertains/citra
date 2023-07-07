@@ -2,6 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <memory>
+
+#include "common/dynamic_library/dynamic_library.h"
 #include "common/dynamic_library/ffmpeg.h"
 #include "common/logging/log.h"
 
@@ -31,7 +34,7 @@ av_hwframe_ctx_init_func av_hwframe_ctx_init;
 av_hwframe_get_buffer_func av_hwframe_get_buffer;
 av_hwframe_transfer_data_func av_hwframe_transfer_data;
 av_int_list_length_for_size_func av_int_list_length_for_size;
-#if LIBAVCODEC_VERSION_MAJOR >= 59
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(56, 53, 100) // lavu 56.53.100
 av_opt_child_class_iterate_func av_opt_child_class_iterate;
 #else
 av_opt_child_class_next_func av_opt_child_class_next;
@@ -110,11 +113,11 @@ swr_free_func swr_free;
 swr_init_func swr_init;
 swresample_version_func swresample_version;
 
-static std::unique_ptr<DynamicLibrary> avutil;
-static std::unique_ptr<DynamicLibrary> avcodec;
-static std::unique_ptr<DynamicLibrary> avfilter;
-static std::unique_ptr<DynamicLibrary> avformat;
-static std::unique_ptr<DynamicLibrary> swresample;
+static std::unique_ptr<Common::DynamicLibrary> avutil;
+static std::unique_ptr<Common::DynamicLibrary> avcodec;
+static std::unique_ptr<Common::DynamicLibrary> avfilter;
+static std::unique_ptr<Common::DynamicLibrary> avformat;
+static std::unique_ptr<Common::DynamicLibrary> swresample;
 
 #define LOAD_SYMBOL(library, name)                                                                 \
     any_failed = any_failed || (name = library->GetSymbol<name##_func>(#name)) == nullptr
@@ -124,7 +127,7 @@ static bool LoadAVUtil() {
         return true;
     }
 
-    avutil = std::make_unique<DynamicLibrary>("avutil", LIBAVUTIL_VERSION_MAJOR);
+    avutil = std::make_unique<Common::DynamicLibrary>("avutil", LIBAVUTIL_VERSION_MAJOR);
     if (!avutil->IsLoaded()) {
         LOG_WARNING(Common, "Could not dynamically load libavutil: {}", avutil->GetLoadError());
         avutil.reset();
@@ -166,7 +169,7 @@ static bool LoadAVUtil() {
     LOAD_SYMBOL(avutil, av_hwframe_get_buffer);
     LOAD_SYMBOL(avutil, av_hwframe_transfer_data);
     LOAD_SYMBOL(avutil, av_int_list_length_for_size);
-#if LIBAVCODEC_VERSION_MAJOR >= 59
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(56, 53, 100) // lavu 56.53.100
     LOAD_SYMBOL(avutil, av_opt_child_class_iterate);
 #else
     LOAD_SYMBOL(avutil, av_opt_child_class_next);
@@ -194,7 +197,7 @@ static bool LoadAVCodec() {
         return true;
     }
 
-    avcodec = std::make_unique<DynamicLibrary>("avcodec", LIBAVCODEC_VERSION_MAJOR);
+    avcodec = std::make_unique<Common::DynamicLibrary>("avcodec", LIBAVCODEC_VERSION_MAJOR);
     if (!avcodec->IsLoaded()) {
         LOG_WARNING(Common, "Could not dynamically load libavcodec: {}", avcodec->GetLoadError());
         avcodec.reset();
@@ -251,7 +254,7 @@ static bool LoadAVFilter() {
         return true;
     }
 
-    avfilter = std::make_unique<DynamicLibrary>("avfilter", LIBAVFILTER_VERSION_MAJOR);
+    avfilter = std::make_unique<Common::DynamicLibrary>("avfilter", LIBAVFILTER_VERSION_MAJOR);
     if (!avfilter->IsLoaded()) {
         LOG_WARNING(Common, "Could not dynamically load libavfilter: {}", avfilter->GetLoadError());
         avfilter.reset();
@@ -296,7 +299,7 @@ static bool LoadAVFormat() {
         return true;
     }
 
-    avformat = std::make_unique<DynamicLibrary>("avformat", LIBAVFORMAT_VERSION_MAJOR);
+    avformat = std::make_unique<Common::DynamicLibrary>("avformat", LIBAVFORMAT_VERSION_MAJOR);
     if (!avformat->IsLoaded()) {
         LOG_WARNING(Common, "Could not dynamically load libavformat: {}", avformat->GetLoadError());
         avformat.reset();
@@ -344,7 +347,8 @@ static bool LoadSWResample() {
         return true;
     }
 
-    swresample = std::make_unique<DynamicLibrary>("swresample", LIBSWRESAMPLE_VERSION_MAJOR);
+    swresample =
+        std::make_unique<Common::DynamicLibrary>("swresample", LIBSWRESAMPLE_VERSION_MAJOR);
     if (!swresample->IsLoaded()) {
         LOG_WARNING(Common, "Could not dynamically load libswresample: {}",
                     swresample->GetLoadError());

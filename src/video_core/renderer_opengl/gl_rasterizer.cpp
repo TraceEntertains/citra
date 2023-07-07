@@ -487,6 +487,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
     }
 
     res_cache.InvalidateFramebuffer(framebuffer);
+    use_custom_normal = false;
 
     return succeeded;
 }
@@ -581,7 +582,7 @@ void RasterizerOpenGL::BindTextureCube(const Pica::TexturingRegs::FullTextureCon
 }
 
 void RasterizerOpenGL::BindMaterial(u32 texture_index, Surface& surface) {
-    if (!surface.IsCustom() || texture_index != 0) {
+    if (!surface.IsCustom()) {
         return;
     }
 
@@ -599,11 +600,6 @@ void RasterizerOpenGL::BindMaterial(u32 texture_index, Surface& surface) {
         }
         bind_texture(TextureUnits::TextureNormalMap, surface.Handle(2), sampler);
         use_custom_normal = true;
-    } else {
-        if (use_custom_normal) {
-            bind_texture(TextureUnits::TextureNormalMap, 0, 0);
-        }
-        use_custom_normal = false;
     }
 }
 
@@ -764,6 +760,14 @@ bool RasterizerOpenGL::AccelerateDisplay(const GPU::Regs::FramebufferConfig& con
     if (!src_surface_id) {
         return false;
     }
+
+    const DebugScope scope{runtime,
+                           Common::Vec4f{0.f, 1.f, 1.f, 1.f},
+                           "RasterizerOpenGL::AccelerateDisplay ({}x{} {} at {:#X})",
+                           src_params.width,
+                           src_params.height,
+                           VideoCore::PixelFormatAsString(src_params.pixel_format),
+                           src_params.addr};
 
     const Surface& src_surface = res_cache.GetSurface(src_surface_id);
     const u32 scaled_width = src_surface.GetScaledWidth();

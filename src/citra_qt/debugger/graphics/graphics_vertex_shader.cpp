@@ -487,7 +487,7 @@ void GraphicsVertexShaderWidget::Reload(bool replace_vertex_data, void* vertex_d
 
     if (replace_vertex_data) {
         if (vertex_data) {
-            memcpy(&input_vertex, vertex_data, sizeof(input_vertex));
+            std::memcpy(&input_vertex, vertex_data, sizeof(input_vertex));
             for (unsigned attr = 0; attr < 16; ++attr) {
                 for (unsigned comp = 0; comp < 4; ++comp) {
                     input_data[4 * attr + comp]->setText(
@@ -550,8 +550,8 @@ void GraphicsVertexShaderWidget::OnResumed() {
 }
 
 void GraphicsVertexShaderWidget::OnInputAttributeChanged(int index) {
-    float value = input_data[index]->text().toFloat();
-    input_vertex.attr[index / 4][index % 4] = Pica::float24::FromFloat32(value);
+    const f32 value = input_data[index]->text().toFloat();
+    input_vertex.attr[index / 4][index % 4] = Pica::f24::FromFloat32(value);
     // Re-execute shader with updated value
     Reload();
 }

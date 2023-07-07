@@ -83,8 +83,6 @@ add_library(video_core STATIC
     renderer_opengl/post_processing_opengl.h
     renderer_opengl/renderer_opengl.cpp
     renderer_opengl/renderer_opengl.h
-    renderer_software/rasterizer.cpp
-    renderer_software/rasterizer.h
     renderer_software/renderer_software.cpp
     renderer_software/renderer_software.h
     renderer_software/sw_clipper.cpp
@@ -99,6 +97,19 @@ add_library(video_core STATIC
     renderer_software/sw_rasterizer.h
     renderer_software/sw_texturing.cpp
     renderer_software/sw_texturing.h
+    renderer_vulkan/pica_to_vk.h
+    renderer_vulkan/vk_common.cpp
+    renderer_vulkan/vk_common.h
+    renderer_vulkan/vk_instance.cpp
+    renderer_vulkan/vk_instance.h
+    renderer_vulkan/vk_platform.cpp
+    renderer_vulkan/vk_platform.h
+    renderer_vulkan/vk_shader_gen.cpp
+    renderer_vulkan/vk_shader_gen.h
+    renderer_vulkan/vk_shader_gen_spv.cpp
+    renderer_vulkan/vk_shader_gen_spv.h
+    renderer_vulkan/vk_shader_util.cpp
+    renderer_vulkan/vk_shader_util.h
     shader/debug_data.h
     shader/shader.cpp
     shader/shader.h
@@ -127,7 +138,8 @@ target_include_directories(video_core PRIVATE ${HOST_SHADERS_INCLUDE})
 create_target_directory_groups(video_core)
 
 target_link_libraries(video_core PUBLIC citra_common citra_core)
-target_link_libraries(video_core PRIVATE Boost::serialization dds-ktx glad json-headers nihstro-headers tsl::robin_map)
+target_link_libraries(video_core PRIVATE Boost::serialization dds-ktx json-headers nihstro-headers tsl::robin_map)
+target_link_libraries(video_core PRIVATE vulkan-headers vma glad sirit SPIRV glslang)
 set_target_properties(video_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 if ("x86_64" IN_LIST ARCHITECTURE)

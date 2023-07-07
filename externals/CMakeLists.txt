@@ -3,6 +3,8 @@
 # Suppress warnings from external libraries
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     add_compile_options(/W0)
+else()
+    add_compile_options(-w)
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
@@ -10,9 +12,9 @@ include(DownloadExternals)
 include(ExternalProject)
 
 # Boost
-set(BOOST_ROOT "${CMAKE_SOURCE_DIR}/externals/boost")
-set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/externals/boost")
-set(Boost_NO_SYSTEM_PATHS ON)
+set(BOOST_ROOT "${CMAKE_SOURCE_DIR}/externals/boost" CACHE STRING "")
+set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/externals/boost" CACHE STRING "")
+set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "")
 add_library(boost INTERFACE)
 target_include_directories(boost SYSTEM INTERFACE ${Boost_INCLUDE_DIR})
 
@@ -33,22 +35,16 @@ target_link_libraries(boost_iostreams PUBLIC boost)
 # Add additional boost libs here; remember to ALIAS them in the root CMakeLists!
 
 # Catch2
-set(CATCH_INSTALL_DOCS OFF)
-set(CATCH_INSTALL_EXTRAS OFF)
+set(CATCH_INSTALL_DOCS OFF CACHE BOOL "")
+set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "")
 add_subdirectory(catch2)
 
 # Crypto++
-set(CRYPTOPP_BUILD_DOCUMENTATION OFF)
-set(CRYPTOPP_BUILD_TESTING OFF)
-set(CRYPTOPP_INSTALL OFF)
-set(CRYPTOPP_SOURCES "${CMAKE_SOURCE_DIR}/externals/cryptopp")
+set(CRYPTOPP_BUILD_DOCUMENTATION OFF CACHE BOOL "")
+set(CRYPTOPP_BUILD_TESTING OFF CACHE BOOL "")
+set(CRYPTOPP_INSTALL OFF CACHE BOOL "")
+set(CRYPTOPP_SOURCES "${CMAKE_SOURCE_DIR}/externals/cryptopp" CACHE STRING "")
 add_subdirectory(cryptopp-cmake)
-
-# HACK: Mismatch between compilation of CryptoPP and headers used in Citra can cause runtime issues.
-# Pull out the compile definitions from CryptoPP and apply them to Citra as well to fix this.
-# See: https://github.com/weidai11/cryptopp/issues/1191
-get_source_file_property(CRYPTOPP_COMPILE_DEFINITIONS ${CRYPTOPP_SOURCES}/cryptlib.cpp TARGET_DIRECTORY cryptopp COMPILE_DEFINITIONS)
-set(CRYPTOPP_COMPILE_DEFINITIONS ${CRYPTOPP_COMPILE_DEFINITIONS} PARENT_SCOPE)
 
 # HACK: The logic to set up the base include directory for CryptoPP does not work with Android SDK CMake 3.22.1.
 # Until there is a fixed version available, this code will detect and add in the proper include if it does not exist.
@@ -80,8 +76,8 @@ endif()
 
 # Dynarmic
 if ("x86_64" IN_LIST ARCHITECTURE OR "arm64" IN_LIST ARCHITECTURE)
-    set(DYNARMIC_TESTS OFF)
-    set(DYNARMIC_FRONTENDS "A32")
+    set(DYNARMIC_TESTS OFF CACHE BOOL "")
+    set(DYNARMIC_FRONTENDS "A32" CACHE STRING "")
     add_subdirectory(dynarmic EXCLUDE_FROM_ALL)
 endif()
 
@@ -94,10 +90,11 @@ endif()
 add_subdirectory(glad)
 
 # glslang
-set(SKIP_GLSLANG_INSTALL ON)
-set(ENABLE_GLSLANG_BINARIES OFF)
-set(ENABLE_SPVREMAPPER OFF)
-set(ENABLE_CTEST OFF)
+set(SKIP_GLSLANG_INSTALL ON CACHE BOOL "")
+set(ENABLE_GLSLANG_BINARIES OFF CACHE BOOL "")
+set(ENABLE_SPVREMAPPER OFF CACHE BOOL "")
+set(ENABLE_CTEST OFF CACHE BOOL "")
+set(ENABLE_HLSL OFF CACHE BOOL "")
 add_subdirectory(glslang)
 
 # inih
@@ -105,13 +102,14 @@ add_subdirectory(inih)
 
 # MicroProfile
 add_library(microprofile INTERFACE)
-target_include_directories(microprofile INTERFACE ./microprofile)
+target_include_directories(microprofile SYSTEM INTERFACE ./microprofile)
 
 # Nihstro
 add_library(nihstro-headers INTERFACE)
-target_include_directories(nihstro-headers INTERFACE ./nihstro/include)
+target_include_directories(nihstro-headers SYSTEM INTERFACE ./nihstro/include)
 if (MSVC)
-    target_compile_options(nihstro-headers INTERFACE /W0)
+    # TODO: For some reason MSVC still applies this warning even with /W0 for externals.
+    target_compile_options(nihstro-headers INTERFACE /wd4715)
 endif()
 
 # Open Source Archives
@@ -137,6 +135,13 @@ if (ENABLE_SDL2 AND NOT USE_SYSTEM_SDL2)
     add_subdirectory(sdl2)
 endif()
 
+# libusb
+if (ENABLE_LIBUSB AND NOT USE_SYSTEM_LIBUSB)
+    add_subdirectory(libusb)
+    set(LIBUSB_INCLUDE_DIR "" PARENT_SCOPE)
+    set(LIBUSB_LIBRARIES usb PARENT_SCOPE)
+endif()
+
 # Zstandard
 set(ZSTD_LEGACY_SUPPORT OFF)
 set(ZSTD_BUILD_PROGRAMS OFF)
@@ -152,6 +157,7 @@ target_include_directories(enet INTERFACE ./enet/include)
 if (ENABLE_CUBEB)
     set(BUILD_TESTS OFF CACHE BOOL "")
     set(BUILD_TOOLS OFF CACHE BOOL "")
+    set(BUNDLE_SPEEX ON CACHE BOOL "")
     add_subdirectory(cubeb EXCLUDE_FROM_ALL)
 endif()
 
@@ -166,10 +172,14 @@ add_library(json-headers INTERFACE)
 target_include_directories(json-headers INTERFACE ./json)
 
 if (ENABLE_WEB_SERVICE)
-    find_package(OpenSSL 1.1)
-    if (OPENSSL_FOUND)
-        set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
-    else()
+    if (USE_SYSTEM_OPENSSL)
+        find_package(OpenSSL 1.1)
+        if (OPENSSL_FOUND)
+            set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+        endif()
+    endif()
+
+    if (NOT OPENSSL_FOUND)
         # LibreSSL
         set(LIBRESSL_SKIP_INSTALL ON CACHE BOOL "")
         set(OPENSSLDIR "/etc/ssl/")
@@ -222,8 +232,8 @@ endif()
 
 # VMA
 add_library(vma INTERFACE)
-target_include_directories(vma INTERFACE ./vma/include)
+target_include_directories(vma SYSTEM INTERFACE ./vma/include)
 
 # vulkan-headers
 add_library(vulkan-headers INTERFACE)
-target_include_directories(vulkan-headers INTERFACE ./vulkan-headers/include)
+target_include_directories(vulkan-headers SYSTEM INTERFACE ./vulkan-headers/include)

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <nihstro/shader_bytecode.h>
 #include <smmintrin.h>
+#include <xbyak/xbyak_util.h>
 #include <xmmintrin.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -28,6 +29,11 @@ using Xbyak::Label;
 using Xbyak::Reg32;
 using Xbyak::Reg64;
 using Xbyak::Xmm;
+
+using nihstro::DestRegister;
+using nihstro::RegisterType;
+
+static const Xbyak::util::Cpu host_caps;
 
 namespace Pica::Shader {
 
@@ -185,13 +191,22 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRe
                                    Xmm dest) {
     Reg64 src_ptr;
     std::size_t src_offset;
-
-    if (src_reg.GetRegisterType() == RegisterType::FloatUniform) {
+    switch (src_reg.GetRegisterType()) {
+    case RegisterType::FloatUniform:
         src_ptr = UNIFORMS;
         src_offset = Uniforms::GetFloatUniformOffset(src_reg.GetIndex());
-    } else {
+        break;
+    case RegisterType::Input:
         src_ptr = STATE;
-        src_offset = UnitState::InputOffset(src_reg);
+        src_offset = UnitState::InputOffset(src_reg.GetIndex());
+        break;
+    case RegisterType::Temporary:
+        src_ptr = STATE;
+        src_offset = UnitState::TemporaryOffset(src_reg.GetIndex());
+        break;
+    default:
+        UNREACHABLE_MSG("Encountered unknown source register type: {}", src_reg.GetRegisterType());
+        break;
     }
 
     int src_offset_disp = (int)src_offset;
@@ -270,7 +285,19 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
 
     SwizzlePattern swiz = {(*swizzle_data)[operand_desc_id]};
 
-    std::size_t dest_offset_disp = UnitState::OutputOffset(dest);
+    std::size_t dest_offset_disp;
+    switch (dest.GetRegisterType()) {
+    case RegisterType::Output:
+        dest_offset_disp = UnitState::OutputOffset(dest.GetIndex());
+        break;
+    case RegisterType::Temporary:
+        dest_offset_disp = UnitState::TemporaryOffset(dest.GetIndex());
+        break;
+    default:
+        UNREACHABLE_MSG("Encountered unknown destination register type: {}",
+                        dest.GetRegisterType());
+        break;
+    }
 
     // If all components are enabled, write the result to the destination register
     if (swiz.dest_mask == NO_DEST_REG_MASK) {
@@ -282,7 +309,7 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
         // register...
         movaps(SCRATCH, xword[STATE + dest_offset_disp]);
 
-        if (Common::GetCPUCaps().sse4_1) {
+        if (host_caps.has(Cpu::tSSE41)) {
             u8 mask = ((swiz.dest_mask & 1) << 3) | ((swiz.dest_mask & 8) >> 3) |
                       ((swiz.dest_mask & 2) << 1) | ((swiz.dest_mask & 4) >> 1);
             blendps(SCRATCH, src, mask);
@@ -413,7 +440,7 @@ void JitShader::Compile_DPH(Instruction instr) {
         Compile_SwizzleSrc(instr, 2, instr.common.src2, SRC2);
     }
 
-    if (Common::GetCPUCaps().sse4_1) {
+    if (host_caps.has(Cpu::tSSE41)) {
         // Set 4th component to 1.0
         blendps(SRC1, ONE, 0b1000);
     } else {
@@ -483,7 +510,7 @@ void JitShader::Compile_SLT(Instruction instr) {
 void JitShader::Compile_FLR(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
 
-    if (Common::GetCPUCaps().sse4_1) {
+    if (host_caps.has(Cpu::tSSE41)) {
         roundps(SRC1, SRC1, _MM_FROUND_FLOOR);
     } else {
         cvttps2dq(SRC1, SRC1);
@@ -789,7 +816,7 @@ void JitShader::Compile_JMP(Instruction instr) {
     }
 }
 
-static void Emit(GSEmitter* emitter, Common::Vec4<float24> (*output)[16]) {
+static void Emit(GSEmitter* emitter, Common::Vec4<f24> (*output)[16]) {
     emitter->Emit(*output);
 }
 

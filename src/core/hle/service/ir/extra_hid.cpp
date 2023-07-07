@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <fmt/format.h>
 #include "common/alignment.h"
 #include "common/settings.h"
 #include "common/string_util.h"
@@ -163,7 +164,7 @@ void ExtraHID::OnDisconnect() {
     timing.UnscheduleEvent(hid_polling_callback_id, 0);
 }
 
-void ExtraHID::HandleConfigureHIDPollingRequest(const std::vector<u8>& request) {
+void ExtraHID::HandleConfigureHIDPollingRequest(std::span<const u8> request) {
     if (request.size() != 3) {
         LOG_ERROR(Service_IR, "Wrong request size ({}): {}", request.size(),
                   fmt::format("{:02x}", fmt::join(request, " ")));
@@ -176,7 +177,7 @@ void ExtraHID::HandleConfigureHIDPollingRequest(const std::vector<u8>& request) 
     timing.ScheduleEvent(msToCycles(hid_period), hid_polling_callback_id);
 }
 
-void ExtraHID::HandleReadCalibrationDataRequest(const std::vector<u8>& request_buf) {
+void ExtraHID::HandleReadCalibrationDataRequest(std::span<const u8> request_buf) {
     struct ReadCalibrationDataRequest {
         RequestID request_id;
         u8 expected_response_time;
@@ -204,16 +205,15 @@ void ExtraHID::HandleReadCalibrationDataRequest(const std::vector<u8>& request_b
         return;
     }
 
-    std::vector<u8> response(5);
+    std::vector<u8> response(5 + size);
     response[0] = static_cast<u8>(ResponseID::ReadCalibrationData);
     std::memcpy(&response[1], &request.offset, sizeof(request.offset));
     std::memcpy(&response[3], &request.size, sizeof(request.size));
-    response.insert(response.end(), calibration_data.begin() + offset,
-                    calibration_data.begin() + offset + size);
+    std::memcpy(&response[5], calibration_data.data() + offset, size);
     Send(response);
 }
 
-void ExtraHID::OnReceive(const std::vector<u8>& data) {
+void ExtraHID::OnReceive(std::span<const u8> data) {
     switch (static_cast<RequestID>(data[0])) {
     case RequestID::ConfigureHIDPolling:
         HandleConfigureHIDPollingRequest(data);

@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include "common/scope_exit.h"
+#include "common/settings.h"
 #include "video_core/custom_textures/material.h"
 #include "video_core/regs.h"
 #include "video_core/renderer_base.h"
@@ -144,8 +145,8 @@ VideoCore::StagingData TextureRuntime::FindStaging(u32 size, bool upload) {
     }
     return VideoCore::StagingData{
         .size = size,
+        .offset = 0,
         .mapped = std::span{staging_buffer.data(), size},
-        .buffer_offset = 0,
     };
 }
 
@@ -680,8 +681,8 @@ Sampler::Sampler(TextureRuntime&, VideoCore::SamplerParams params) {
     const GLenum wrap_s = PicaToGL::WrapMode(params.wrap_s);
     const GLenum wrap_t = PicaToGL::WrapMode(params.wrap_t);
     const Common::Vec4f gl_color = PicaToGL::ColorRGBA8(params.border_color);
-    const float lod_min = params.lod_min;
-    const float lod_max = params.lod_max;
+    const auto lod_min = static_cast<float>(params.lod_min);
+    const auto lod_max = static_cast<float>(params.lod_max);
 
     sampler.Create();
 
@@ -699,5 +700,22 @@ Sampler::Sampler(TextureRuntime&, VideoCore::SamplerParams params) {
 }
 
 Sampler::~Sampler() = default;
+
+DebugScope::DebugScope(TextureRuntime& runtime, Common::Vec4f, std::string_view label)
+    : local_scope_depth{global_scope_depth++} {
+    if (!Settings::values.renderer_debug) {
+        return;
+    }
+    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, local_scope_depth,
+                     static_cast<GLsizei>(label.size()), label.data());
+}
+
+DebugScope::~DebugScope() {
+    if (!Settings::values.renderer_debug) {
+        return;
+    }
+    glPopDebugGroup();
+    global_scope_depth--;
+}
 
 } // namespace OpenGL

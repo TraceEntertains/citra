@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <climits>
 #include <list>
 #include <vector>
 #include <boost/serialization/string.hpp>
@@ -288,7 +289,7 @@ void ThreadManager::DebugThreadQueue() {
 
     for (auto& t : thread_list) {
         u32 priority = ready_queue.contains(t.get());
-        if (priority != -1) {
+        if (priority != UINT_MAX) {
             LOG_DEBUG(Kernel, "0x{:02X} {}", priority, t->GetObjectId());
         }
     }
@@ -303,7 +304,7 @@ void ThreadManager::DebugThreadQueue() {
  * alloc_needed: Whether there's a need to allocate a new TLS page (All pages are full).
  */
 static std::tuple<std::size_t, std::size_t, bool> GetFreeThreadLocalSlot(
-    const std::vector<std::bitset<8>>& tls_slots) {
+    std::span<const std::bitset<8>> tls_slots) {
     // Iterate over all the allocated pages, and try to find one where not all slots are used.
     for (std::size_t page = 0; page < tls_slots.size(); ++page) {
         const auto& page_tls_slots = tls_slots[page];
@@ -422,7 +423,7 @@ ResultVal<std::shared_ptr<Thread>> KernelSystem::CreateThread(
     thread_managers[processor_id]->ready_queue.push_back(thread->current_priority, thread.get());
     thread->status = ThreadStatus::Ready;
 
-    return MakeResult<std::shared_ptr<Thread>>(std::move(thread));
+    return thread;
 }
 
 void Thread::SetPriority(u32 priority) {
@@ -526,7 +527,7 @@ ThreadManager::~ThreadManager() {
     }
 }
 
-const std::vector<std::shared_ptr<Thread>>& ThreadManager::GetThreadList() {
+std::span<const std::shared_ptr<Thread>> ThreadManager::GetThreadList() {
     return thread_list;
 }
 

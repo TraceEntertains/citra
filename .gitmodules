@@ -36,7 +36,7 @@
     url = https://github.com/mozilla/cubeb
 [submodule "discord-rpc"]
     path = externals/discord-rpc
-    url = https://github.com/discord/discord-rpc.git
+    url = https://github.com/yuzu-emu/discord-rpc.git
 [submodule "cpp-jwt"]
     path = externals/cpp-jwt
     url = https://github.com/arun11299/cpp-jwt.git
@@ -80,5 +80,5 @@
     path = externals/sirit
     url = https://github.com/yuzu-emu/sirit
 [submodule "library-headers"]
-    path = externals/library-headers
+    path = externals/library-headers/library-headers
     url = https://github.com/citra-emu/ext-library-headers.git

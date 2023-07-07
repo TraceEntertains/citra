@@ -16,9 +16,6 @@
 #include "video_core/renderer_software/renderer_software.h"
 #include "video_core/video_core.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Video Core namespace
-
 namespace VideoCore {
 
 std::unique_ptr<RendererBase> g_renderer{}; ///< Renderer plugin
@@ -40,7 +37,7 @@ void Init(Frontend::EmuWindow& emu_window, Frontend::EmuWindow* secondary_window
 
     switch (graphics_api) {
     case Settings::GraphicsAPI::Software:
-        g_renderer = std::make_unique<VideoCore::RendererSoftware>(system, emu_window);
+        g_renderer = std::make_unique<SwRenderer::RendererSoftware>(system, emu_window);
         break;
     case Settings::GraphicsAPI::OpenGL:
         g_renderer = std::make_unique<OpenGL::RendererOpenGL>(system, emu_window, secondary_window);

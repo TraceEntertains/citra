@@ -10,6 +10,7 @@
 #include <boost/optional.hpp>
 #include <cryptopp/hex.h>
 #include <cryptopp/osrng.h>
+#include <fmt/format.h>
 #include "common/bit_field.h"
 #include "common/common_types.h"
 #include "common/file_util.h"
@@ -45,7 +46,7 @@ struct ControllerState {
     union {
         struct {
             union {
-                u16_le hex;
+                u16_le hex = 0;
 
                 BitField<0, 1, u16> a;
                 BitField<1, 1, u16> b;
@@ -96,7 +97,7 @@ struct ControllerState {
 
         struct {
             union {
-                u32_le hex;
+                u32_le hex = 0;
 
                 BitField<0, 5, u32> battery_level;
                 BitField<5, 1, u32> zl_not_held;
@@ -129,14 +130,14 @@ struct CTMHeader {
 static_assert(sizeof(CTMHeader) == 256, "CTMHeader should be 256 bytes");
 #pragma pack(pop)
 
-static u64 GetInputCount(const std::vector<u8>& input) {
+static u64 GetInputCount(std::span<const u8> input) {
     u64 input_count = 0;
     for (std::size_t pos = 0; pos < input.size(); pos += sizeof(ControllerState)) {
         if (input.size() < pos + sizeof(ControllerState)) {
             break;
         }
 
-        ControllerState state;
+        ControllerState state{};
         std::memcpy(&state, input.data() + pos, sizeof(ControllerState));
         if (state.type == ControllerStateType::PadAndCircle) {
             input_count++;
@@ -238,7 +239,7 @@ void Movie::CheckInputEnd() {
 }
 
 void Movie::Play(Service::HID::PadState& pad_state, s16& circle_pad_x, s16& circle_pad_y) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
     current_input++;
@@ -270,7 +271,7 @@ void Movie::Play(Service::HID::PadState& pad_state, s16& circle_pad_x, s16& circ
 }
 
 void Movie::Play(Service::HID::TouchDataEntry& touch_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -287,7 +288,7 @@ void Movie::Play(Service::HID::TouchDataEntry& touch_data) {
 }
 
 void Movie::Play(Service::HID::AccelerometerDataEntry& accelerometer_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -304,7 +305,7 @@ void Movie::Play(Service::HID::AccelerometerDataEntry& accelerometer_data) {
 }
 
 void Movie::Play(Service::HID::GyroscopeDataEntry& gyroscope_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -321,7 +322,7 @@ void Movie::Play(Service::HID::GyroscopeDataEntry& gyroscope_data) {
 }
 
 void Movie::Play(Service::IR::PadState& pad_state, s16& c_stick_x, s16& c_stick_y) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -339,7 +340,7 @@ void Movie::Play(Service::IR::PadState& pad_state, s16& c_stick_x, s16& c_stick_
 }
 
 void Movie::Play(Service::IR::ExtraHIDResponse& extra_hid_response) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -371,7 +372,7 @@ void Movie::Record(const Service::HID::PadState& pad_state, const s16& circle_pa
                    const s16& circle_pad_y) {
     current_input++;
 
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::PadAndCircle;
 
     s.pad_and_circle.a.Assign(static_cast<u16>(pad_state.a));
@@ -396,7 +397,7 @@ void Movie::Record(const Service::HID::PadState& pad_state, const s16& circle_pa
 }
 
 void Movie::Record(const Service::HID::TouchDataEntry& touch_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Touch;
 
     s.touch.x = touch_data.x;
@@ -407,7 +408,7 @@ void Movie::Record(const Service::HID::TouchDataEntry& touch_data) {
 }
 
 void Movie::Record(const Service::HID::AccelerometerDataEntry& accelerometer_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Accelerometer;
 
     s.accelerometer.x = accelerometer_data.x;
@@ -418,7 +419,7 @@ void Movie::Record(const Service::HID::AccelerometerDataEntry& accelerometer_dat
 }
 
 void Movie::Record(const Service::HID::GyroscopeDataEntry& gyroscope_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Gyroscope;
 
     s.gyroscope.x = gyroscope_data.x;
@@ -430,7 +431,7 @@ void Movie::Record(const Service::HID::GyroscopeDataEntry& gyroscope_data) {
 
 void Movie::Record(const Service::IR::PadState& pad_state, const s16& c_stick_x,
                    const s16& c_stick_y) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::IrRst;
 
     s.ir_rst.x = c_stick_x;
@@ -442,7 +443,7 @@ void Movie::Record(const Service::IR::PadState& pad_state, const s16& c_stick_x,
 }
 
 void Movie::Record(const Service::IR::ExtraHIDResponse& extra_hid_response) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::ExtraHidResponse;
 
     s.extra_hid_response.battery_level.Assign(extra_hid_response.buttons.battery_level);
@@ -475,8 +476,7 @@ Movie::ValidationResult Movie::ValidateHeader(const CTMHeader& header) const {
     return ValidationResult::OK;
 }
 
-Movie::ValidationResult Movie::ValidateInput(const std::vector<u8>& input,
-                                             u64 expected_count) const {
+Movie::ValidationResult Movie::ValidateInput(std::span<const u8> input, u64 expected_count) const {
     return GetInputCount(input) == expected_count ? ValidationResult::OK
                                                   : ValidationResult::InputCountDismatch;
 }

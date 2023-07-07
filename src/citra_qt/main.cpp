@@ -64,6 +64,7 @@
 #include "common/arch.h"
 #include "common/common_paths.h"
 #include "common/detached_tasks.h"
+#include "common/dynamic_library/dynamic_library.h"
 #include "common/file_util.h"
 #include "common/literals.h"
 #include "common/logging/backend.h"
@@ -96,7 +97,7 @@
 #include "video_core/video_core.h"
 
 #ifdef __APPLE__
-#include "macos_authorization.h"
+#include "common/apple_authorization.h"
 #endif
 
 #ifdef USE_DISCORD_PRESENCE
@@ -112,6 +113,10 @@ extern "C" {
 // tells Nvidia drivers to use the dedicated GPU by default on laptops with switchable graphics
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 }
+#endif
+
+#ifdef HAVE_SDL2
+#include <SDL.h>
 #endif
 
 constexpr int default_mouse_timeout = 2500;
@@ -139,24 +144,11 @@ void GMainWindow::ShowTelemetryCallout() {
            "<br/><br/>Would you like to share your usage data with us?");
     if (QMessageBox::question(this, tr("Telemetry"), telemetry_message) == QMessageBox::Yes) {
         NetSettings::values.enable_telemetry = true;
-        Settings::Apply();
+        system.ApplySettings();
     }
 }
 
 const int GMainWindow::max_recent_files_item;
-
-static void InitializeLogging() {
-    Log::Filter log_filter;
-    log_filter.ParseFilterString(Settings::values.log_filter.GetValue());
-    Log::SetGlobalFilter(log_filter);
-
-    const std::string& log_dir = FileUtil::GetUserPath(FileUtil::UserPath::LogDir);
-    FileUtil::CreateFullPath(log_dir);
-    Log::AddBackend(std::make_unique<Log::FileBackend>(log_dir + LOG_FILE));
-#ifdef _WIN32
-    Log::AddBackend(std::make_unique<Log::DebuggerBackend>());
-#endif
-}
 
 static QString PrettyProductName() {
 #ifdef _WIN32
@@ -183,9 +175,10 @@ static QString PrettyProductName() {
 GMainWindow::GMainWindow(Core::System& system_)
     : ui{std::make_unique<Ui::MainWindow>()}, system{system_}, movie{Core::Movie::GetInstance()},
       config{std::make_unique<Config>()}, emu_thread{nullptr} {
-    InitializeLogging();
+    Common::Log::Initialize();
+    Common::Log::Start();
+
     Debugger::ToggleConsole();
-    Settings::LogSettings();
 
     // register types to use in slots and signals
     qRegisterMetaType<std::size_t>("std::size_t");
@@ -277,8 +270,46 @@ GMainWindow::GMainWindow(Core::System& system_)
 #endif
 
     QStringList args = QApplication::arguments();
-    if (args.length() >= 2) {
-        BootGame(args[1]);
+    if (args.size() < 2) {
+        return;
+    }
+
+    QString game_path;
+    for (int i = 1; i < args.size(); ++i) {
+        // Preserves drag/drop functionality
+        if (args.size() == 2 && !args[1].startsWith(QChar::fromLatin1('-'))) {
+            game_path = args[1];
+            break;
+        }
+
+        // Launch game in fullscreen mode
+        if (args[i] == QStringLiteral("-f")) {
+            ui->action_Fullscreen->setChecked(true);
+            continue;
+        }
+
+        // Launch game in windowed mode
+        if (args[i] == QStringLiteral("-w")) {
+            ui->action_Fullscreen->setChecked(false);
+            continue;
+        }
+
+        // Launch game at path
+        if (args[i] == QStringLiteral("-g")) {
+            if (i >= args.size() - 1) {
+                continue;
+            }
+
+            if (args[i + 1].startsWith(QChar::fromLatin1('-'))) {
+                continue;
+            }
+
+            game_path = args[++i];
+        }
+    }
+
+    if (!game_path.isEmpty()) {
+        BootGame(game_path);
     }
 }
 
@@ -296,8 +327,8 @@ void GMainWindow::InitializeWidgets() {
 #ifdef CITRA_ENABLE_COMPATIBILITY_REPORTING
     ui->action_Report_Compatibility->setVisible(true);
 #endif
-    render_window = new GRenderWindow(this, emu_thread.get(), false);
-    secondary_window = new GRenderWindow(this, emu_thread.get(), true);
+    render_window = new GRenderWindow(this, emu_thread.get(), system, false);
+    secondary_window = new GRenderWindow(this, emu_thread.get(), system, true);
     render_window->hide();
     secondary_window->hide();
     secondary_window->setParent(nullptr);
@@ -370,13 +401,7 @@ void GMainWindow::InitializeWidgets() {
     graphics_api_button->setFocusPolicy(Qt::NoFocus);
     UpdateAPIIndicator();
 
-    connect(graphics_api_button, &QPushButton::clicked, this, [this] {
-        if (emulation_running) {
-            return;
-        }
-
-        UpdateAPIIndicator(true);
-    });
+    connect(graphics_api_button, &QPushButton::clicked, this, [this] { UpdateAPIIndicator(true); });
 
     statusBar()->insertPermanentWidget(0, graphics_api_button);
 
@@ -392,6 +417,7 @@ void GMainWindow::InitializeWidgets() {
     actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Default);
     actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Single_Screen);
     actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Large_Screen);
+    actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Hybrid_Screen);
     actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Side_by_Side);
     actionGroup_ScreenLayouts->addAction(ui->action_Screen_Layout_Separate_Windows);
 }
@@ -805,6 +831,7 @@ void GMainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_Screen_Layout_Default, &GMainWindow::ChangeScreenLayout);
     connect_menu(ui->action_Screen_Layout_Single_Screen, &GMainWindow::ChangeScreenLayout);
     connect_menu(ui->action_Screen_Layout_Large_Screen, &GMainWindow::ChangeScreenLayout);
+    connect_menu(ui->action_Screen_Layout_Hybrid_Screen, &GMainWindow::ChangeScreenLayout);
     connect_menu(ui->action_Screen_Layout_Side_by_Side, &GMainWindow::ChangeScreenLayout);
     connect_menu(ui->action_Screen_Layout_Separate_Windows, &GMainWindow::ChangeScreenLayout);
     connect_menu(ui->action_Screen_Layout_Swap_Screens, &GMainWindow::OnSwapScreens);
@@ -970,7 +997,7 @@ void GMainWindow::ShowUpdaterWidgets() {
 }
 #endif
 
-#if defined(__unix__) && !defined(__APPLE__)
+#if defined(HAVE_SDL2) && defined(__unix__) && !defined(__APPLE__)
 static std::optional<QDBusObjectPath> HoldWakeLockLinux(u32 window_id = 0) {
     if (!QDBusConnection::sessionBus().isConnected()) {
         return {};
@@ -1016,12 +1043,12 @@ void GMainWindow::PreventOSSleep() {
     SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
 #elif defined(HAVE_SDL2)
     SDL_DisableScreenSaver();
-#ifdef __unix__
+#if defined(__unix__) && !defined(__APPLE__)
     auto reply = HoldWakeLockLinux(winId());
     if (reply) {
         wake_lock = std::move(reply.value());
     }
-#endif // __unix__
+#endif // defined(__unix__) && !defined(__APPLE__)
 #endif // _WIN32
 }
 
@@ -1030,11 +1057,11 @@ void GMainWindow::AllowOSSleep() {
     SetThreadExecutionState(ES_CONTINUOUS);
 #elif defined(HAVE_SDL2)
     SDL_EnableScreenSaver();
-#ifdef __unix__
+#if defined(__unix__) && !defined(__APPLE__)
     if (!wake_lock.path().isEmpty()) {
         ReleaseWakeLockLinux(wake_lock);
     }
-#endif // __unix__
+#endif // defined(__unix__) && !defined(__APPLE__)
 #endif // _WIN32
 }
 
@@ -1154,11 +1181,12 @@ void GMainWindow::BootGame(const QString& filename) {
         const std::string config_file_name =
             title_id == 0 ? name : fmt::format("{:016X}", title_id);
         Config per_game_config(config_file_name, Config::ConfigType::PerGameConfig);
-        Settings::Apply();
+        system.ApplySettings();
 
         LOG_INFO(Frontend, "Using per game config file for title id {}", config_file_name);
-        Settings::LogSettings();
     }
+
+    Settings::LogSettings();
 
     // Save configurations
     UpdateUISettings();
@@ -1733,6 +1761,7 @@ void GMainWindow::OnStartGame() {
     PreventOSSleep();
 
     emu_thread->SetRunning(true);
+    graphics_api_button->setEnabled(false);
     qRegisterMetaType<Core::System::ResultStatus>("Core::System::ResultStatus");
     qRegisterMetaType<std::string>("std::string");
     connect(emu_thread.get(), &EmuThread::ErrorThrown, this, &GMainWindow::OnCoreError);
@@ -1742,6 +1771,7 @@ void GMainWindow::OnStartGame() {
     discord_rpc->Update();
 
     UpdateSaveStates();
+    UpdateAPIIndicator();
 }
 
 void GMainWindow::OnRestartGame() {
@@ -1772,7 +1802,9 @@ void GMainWindow::OnPauseContinueGame() {
 
 void GMainWindow::OnStopGame() {
     ShutdownGame();
+    graphics_api_button->setEnabled(true);
     Settings::RestoreGlobalState(false);
+    UpdateAPIIndicator();
 }
 
 void GMainWindow::OnLoadComplete() {
@@ -1884,6 +1916,8 @@ void GMainWindow::ChangeScreenLayout() {
         new_layout = Settings::LayoutOption::SingleScreen;
     } else if (ui->action_Screen_Layout_Large_Screen->isChecked()) {
         new_layout = Settings::LayoutOption::LargeScreen;
+    } else if (ui->action_Screen_Layout_Hybrid_Screen->isChecked()) {
+        new_layout = Settings::LayoutOption::HybridScreen;
     } else if (ui->action_Screen_Layout_Side_by_Side->isChecked()) {
         new_layout = Settings::LayoutOption::SideScreen;
     } else if (ui->action_Screen_Layout_Separate_Windows->isChecked()) {
@@ -1891,7 +1925,7 @@ void GMainWindow::ChangeScreenLayout() {
     }
 
     Settings::values.layout_option = new_layout;
-    Settings::Apply();
+    system.ApplySettings();
     UpdateSecondaryWindowVisibility();
 }
 
@@ -1903,6 +1937,8 @@ void GMainWindow::ToggleScreenLayout() {
         case Settings::LayoutOption::SingleScreen:
             return Settings::LayoutOption::LargeScreen;
         case Settings::LayoutOption::LargeScreen:
+            return Settings::LayoutOption::HybridScreen;
+        case Settings::LayoutOption::HybridScreen:
             return Settings::LayoutOption::SideScreen;
         case Settings::LayoutOption::SideScreen:
             return Settings::LayoutOption::SeparateWindows;
@@ -1917,18 +1953,18 @@ void GMainWindow::ToggleScreenLayout() {
 
     Settings::values.layout_option = new_layout;
     SyncMenuUISettings();
-    Settings::Apply();
+    system.ApplySettings();
     UpdateSecondaryWindowVisibility();
 }
 
 void GMainWindow::OnSwapScreens() {
     Settings::values.swap_screen = ui->action_Screen_Layout_Swap_Screens->isChecked();
-    Settings::Apply();
+    system.ApplySettings();
 }
 
 void GMainWindow::OnRotateScreens() {
     Settings::values.upright_screen = ui->action_Screen_Layout_Upright_Screens->isChecked();
-    Settings::Apply();
+    system.ApplySettings();
 }
 
 void GMainWindow::TriggerSwapScreens() {
@@ -1967,7 +2003,7 @@ void GMainWindow::OnLoadState() {
 void GMainWindow::OnConfigure() {
     game_list->SetDirectoryWatcherEnabled(false);
     Settings::SetConfiguringGlobal(true);
-    ConfigureDialog configureDialog(this, hotkey_registry,
+    ConfigureDialog configureDialog(this, hotkey_registry, system,
                                     !multiplayer_state->IsHostingPublicRoom());
     connect(&configureDialog, &ConfigureDialog::LanguageChanged, this,
             &GMainWindow::OnLanguageChanged);
@@ -2012,6 +2048,25 @@ void GMainWindow::OnLoadAmiibo() {
         return;
     }
 
+    Core::System& system{Core::System::GetInstance()};
+    Service::SM::ServiceManager& sm = system.ServiceManager();
+    auto nfc = sm.GetService<Service::NFC::Module::Interface>("nfc:u");
+    if (nfc == nullptr) {
+        return;
+    }
+
+    if (nfc->IsTagActive()) {
+        QMessageBox::warning(this, tr("Error opening amiibo data file"),
+                             tr("A tag is already in use."));
+        return;
+    }
+
+    if (!nfc->IsSearchingForAmiibos()) {
+        QMessageBox::warning(this, tr("Error opening amiibo data file"),
+                             tr("Game is not looking for amiibos."));
+        return;
+    }
+
     const QString extensions{QStringLiteral("*.bin")};
     const QString file_filter = tr("Amiibo File (%1);; All Files (*.*)").arg(extensions);
     const QString filename = QFileDialog::getOpenFileName(this, tr("Load Amiibo"), {}, file_filter);
@@ -2030,26 +2085,12 @@ void GMainWindow::LoadAmiibo(const QString& filename) {
         return;
     }
 
-    QFile nfc_file{filename};
-    if (!nfc_file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, tr("Error opening Amiibo data file"),
-                             tr("Unable to open Amiibo file \"%1\" for reading.").arg(filename));
+    if (!nfc->LoadAmiibo(filename.toStdString())) {
+        QMessageBox::warning(this, tr("Error opening amiibo data file"),
+                             tr("Unable to open amiibo file \"%1\" for reading.").arg(filename));
         return;
     }
 
-    Service::NFC::AmiiboData amiibo_data{};
-    const u64 read_size =
-        nfc_file.read(reinterpret_cast<char*>(&amiibo_data), sizeof(Service::NFC::AmiiboData));
-    if (read_size != sizeof(Service::NFC::AmiiboData)) {
-        QMessageBox::warning(this, tr("Error reading Amiibo data file"),
-                             tr("Unable to fully read Amiibo data. Expected to read %1 bytes, but "
-                                "was only able to read %2 bytes.")
-                                 .arg(sizeof(Service::NFC::AmiiboData))
-                                 .arg(read_size));
-        return;
-    }
-
-    nfc->LoadAmiibo(amiibo_data);
     ui->action_Remove_Amiibo->setEnabled(true);
 }
 
@@ -2242,11 +2283,11 @@ void GMainWindow::OnOpenFFmpeg() {
     }
 
     static const std::array library_names = {
-        DynamicLibrary::DynamicLibrary::GetLibraryName("avcodec", LIBAVCODEC_VERSION_MAJOR),
-        DynamicLibrary::DynamicLibrary::GetLibraryName("avfilter", LIBAVFILTER_VERSION_MAJOR),
-        DynamicLibrary::DynamicLibrary::GetLibraryName("avformat", LIBAVFORMAT_VERSION_MAJOR),
-        DynamicLibrary::DynamicLibrary::GetLibraryName("avutil", LIBAVUTIL_VERSION_MAJOR),
-        DynamicLibrary::DynamicLibrary::GetLibraryName("swresample", LIBSWRESAMPLE_VERSION_MAJOR),
+        Common::DynamicLibrary::GetLibraryName("avcodec", LIBAVCODEC_VERSION_MAJOR),
+        Common::DynamicLibrary::GetLibraryName("avfilter", LIBAVFILTER_VERSION_MAJOR),
+        Common::DynamicLibrary::GetLibraryName("avformat", LIBAVFORMAT_VERSION_MAJOR),
+        Common::DynamicLibrary::GetLibraryName("avutil", LIBAVUTIL_VERSION_MAJOR),
+        Common::DynamicLibrary::GetLibraryName("swresample", LIBSWRESAMPLE_VERSION_MAJOR),
     };
 
     for (auto& library_name : library_names) {
@@ -2284,7 +2325,7 @@ void GMainWindow::OnOpenFFmpeg() {
 #endif
 
 void GMainWindow::OnStartVideoDumping() {
-    DumpingDialog dialog(this);
+    DumpingDialog dialog(this, system);
     if (dialog.exec() != QDialog::DialogCode::Accepted) {
         ui->action_Dump_Video->setChecked(false);
         return;
@@ -2775,6 +2816,8 @@ void GMainWindow::SyncMenuUISettings() {
                                                        Settings::LayoutOption::SingleScreen);
     ui->action_Screen_Layout_Large_Screen->setChecked(Settings::values.layout_option.GetValue() ==
                                                       Settings::LayoutOption::LargeScreen);
+    ui->action_Screen_Layout_Hybrid_Screen->setChecked(Settings::values.layout_option.GetValue() ==
+                                                       Settings::LayoutOption::HybridScreen);
     ui->action_Screen_Layout_Side_by_Side->setChecked(Settings::values.layout_option.GetValue() ==
                                                       Settings::LayoutOption::SideScreen);
     ui->action_Screen_Layout_Separate_Windows->setChecked(
@@ -2884,7 +2927,7 @@ int main(int argc, char* argv[]) {
     // generating shaders
     setlocale(LC_ALL, "C");
 
-    Core::System& system = Core::System::GetInstance();
+    auto& system{Core::System::GetInstance()};
     GMainWindow main_window(system);
 
     // Register frontend applets

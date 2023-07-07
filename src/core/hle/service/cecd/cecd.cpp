@@ -834,7 +834,7 @@ void Module::Interface::OpenAndRead(Kernel::HLERequestContext& ctx) {
               open_mode.check);
 }
 
-std::string Module::EncodeBase64(const std::vector<u8>& in) const {
+std::string Module::EncodeBase64(std::span<const u8> in) const {
     using namespace CryptoPP;
     using Name::EncodingLookupArray;
     using Name::InsertLineBreaks;
@@ -855,7 +855,7 @@ std::string Module::EncodeBase64(const std::vector<u8>& in) const {
 }
 
 std::string Module::GetCecDataPathTypeAsString(const CecDataPathType type, const u32 program_id,
-                                               const std::vector<u8>& msg_id) const {
+                                               std::span<const u8> msg_id) const {
     switch (type) {
     case CecDataPathType::MboxList:
         return "/CEC/MBoxList____";
@@ -1239,7 +1239,7 @@ void Module::CheckAndUpdateFile(const CecDataPathType path_type, const u32 ncch_
                 const u32 message_size = static_cast<u32>(message->GetSize());
                 std::vector<u8> buffer(message_size);
 
-                message->Read(0, message_size, buffer.data()).Unwrap();
+                void(message->Read(0, message_size, buffer.data()).Unwrap());
                 message->Close();
 
                 std::memcpy(&message_headers[outbox_info_header.message_num++], buffer.data(),
@@ -1329,7 +1329,7 @@ void Module::CheckAndUpdateFile(const CecDataPathType path_type, const u32 ncch_
                 const u32 message_size = static_cast<u32>(message->GetSize());
                 std::vector<u8> buffer(message_size);
 
-                message->Read(0, message_size, buffer.data()).Unwrap();
+                void(message->Read(0, message_size, buffer.data()).Unwrap());
                 message->Close();
 
                 // Message id is at offset 0x20, and is 8 bytes

@@ -5,6 +5,10 @@ cmake_minimum_required(VERSION 3.15)
 cmake_policy(SET CMP0092 NEW)
 # Enforce new LTO setting
 cmake_policy(SET CMP0069 NEW)
+# Honor visibility properties for all targets
+# Set the default so subdirectory cmake_minimum_required calls won't unset the policy.
+cmake_policy(SET CMP0063 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0063 NEW)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/externals/cmake-modules")
@@ -14,16 +18,31 @@ include(CMakeDependentOption)
 project(citra LANGUAGES C CXX ASM)
 
 if (APPLE)
-    enable_language(OBJC)
+    # Silence warnings on empty objects, for example when platform-specific code is #ifdef'd out.
+    set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+    set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+
     if (IOS)
+        # Minimum iOS 14
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
+
         # Enable searching CMAKE_PREFIX_PATH for bundled dependencies.
         set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
         set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
         set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+    else()
+        # Minimum macOS 11
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
     endif()
 endif()
 
-option(ENABLE_LTO "Enable link time optimization" OFF)
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+    set(IS_DEBUG_BUILD ON)
+else()
+    set(IS_DEBUG_BUILD OFF)
+endif()
 
 option(ENABLE_SDL2 "Enable using SDL2" ON)
 CMAKE_DEPENDENT_OPTION(ENABLE_SDL2_FRONTEND "Enable the SDL2 frontend" ON "ENABLE_SDL2;NOT ANDROID AND NOT IOS" OFF)
@@ -33,15 +52,11 @@ option(USE_SYSTEM_SDL2 "Use the system SDL2 lib (instead of the bundled one)" OF
 option(ENABLE_QT "Enable the Qt frontend" ON)
 option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" OFF)
 CMAKE_DEPENDENT_OPTION(ENABLE_QT_UPDATER "Enable built-in updater for the Qt frontend" ON "NOT IOS" OFF)
-CMAKE_DEPENDENT_OPTION(CITRA_USE_BUNDLED_QT "Download bundled Qt binaries" ON "ENABLE_QT;MSVC OR APPLE" OFF)
 
 CMAKE_DEPENDENT_OPTION(ENABLE_TESTS "Enable generating tests executable" ON "NOT IOS" OFF)
 CMAKE_DEPENDENT_OPTION(ENABLE_DEDICATED_ROOM "Enable generating dedicated room executable" ON "NOT ANDROID AND NOT IOS" OFF)
 
 option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
-if (MSVC)
-    set(OPENSSL_DLL_DIR "" CACHE PATH "Location of the Openssl dlls")
-endif()
 
 CMAKE_DEPENDENT_OPTION(ENABLE_CUBEB "Enables the cubeb audio backend" ON "NOT IOS" OFF)
 option(ENABLE_OPENAL "Enables the OpenAL audio backend" ON)
@@ -50,34 +65,23 @@ CMAKE_DEPENDENT_OPTION(ENABLE_LIBUSB "Enable libusb for GameCube Adapter support
 
 option(USE_DISCORD_PRESENCE "Enables Discord Rich Presence" OFF)
 
-option(CITRA_USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
-
 CMAKE_DEPENDENT_OPTION(ENABLE_MF "Use Media Foundation decoder (preferred over FFmpeg)" ON "WIN32" OFF)
 CMAKE_DEPENDENT_OPTION(ENABLE_AUDIOTOOLBOX "Use AudioToolbox decoder (preferred over FFmpeg)" ON "APPLE" OFF)
 
-CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ON "MINGW" OFF)
-
-option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
-
-
-CMAKE_DEPENDENT_OPTION(CITRA_USE_BUNDLED_MOLTENVK "Download the bundled MoltenVK" ON "APPLE" OFF)
-
-CMAKE_DEPENDENT_OPTION(CITRA_BUNDLE_LIBRARIES "Bundle dependent libraries with the output executables" ON "APPLE" OFF)
-
+# Compile options
+CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ${IS_DEBUG_BUILD} "MINGW" OFF)
+option(ENABLE_LTO "Enable link time optimization" OFF)
+option(CITRA_USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
 option(CITRA_WARNINGS_AS_ERRORS "Enable warnings as errors" ON)
 
-if (CITRA_USE_PRECOMPILED_HEADERS)
-    if (MSVC AND CCACHE)
-        # buildcache does not properly cache PCH files, leading to compilation errors.
-        # See https://github.com/mbitsnbites/buildcache/discussions/230
-        message(WARNING "Buildcache does not properly support Precompiled Headers. Disabling PCH")
-        set(CITRA_USE_PRECOMPILED_HEADERS OFF)
-    endif()
-    if(APPLE)
-        message(WARNING "Precompiled Headers currently do not work on Apple. Disabling PCH")
-        set(CITRA_USE_PRECOMPILED_HEADERS OFF)
-    endif()
-endif()
+# System library options
+CMAKE_DEPENDENT_OPTION(USE_SYSTEM_QT "Use the system Qt lib (instead of the bundled one)" OFF "ENABLE_QT;MSVC OR APPLE" ON)
+CMAKE_DEPENDENT_OPTION(USE_SYSTEM_MOLTENVK "Use the system MoltenVK lib (instead of the bundled one)" OFF "APPLE" OFF)
+option(USE_SYSTEM_SDL2 "Use the system SDL2 lib (instead of the bundled one)" OFF)
+option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
+option(USE_SYSTEM_OPENSSL "Use the system OpenSSL libs (instead of the bundled LibreSSL)" OFF)
+option(USE_SYSTEM_LIBUSB "Use the system libusb (instead of the bundled libusb)" OFF)
+
 if (CITRA_USE_PRECOMPILED_HEADERS)
     message(STATUS "Using Precompiled Headers.")
     set(CMAKE_PCH_INSTANTIATE_TEMPLATES ON)
@@ -127,7 +131,10 @@ function(check_submodules_present)
         endif()
     endforeach()
 endfunction()
-check_submodules_present()
+if (EXISTS "${PROJECT_SOURCE_DIR}/.git/objects")
+    # only check submodules when source is obtained via Git
+    check_submodules_present()
+endif()
 
 configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
@@ -195,6 +202,10 @@ add_definitions(-DBOOST_NO_CXX98_FUNCTION_BASE)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Apply consistent visibility settings.
+set(CMAKE_CXX_VISIBILITY_PRESET default)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN NO)
+
 # set up output paths for executable binaries
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin/$<CONFIG>)
 
@@ -207,8 +218,8 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 if (ENABLE_QT)
-    if (CITRA_USE_BUNDLED_QT)
-        download_qt_external(6.5.0)
+    if (NOT USE_SYSTEM_QT)
+        download_qt(6.5.0)
     endif()
 
     find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Concurrent)
@@ -220,26 +231,6 @@ if (ENABLE_QT)
     if (ENABLE_QT_TRANSLATION)
         find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
     endif()
-
-    if (NOT CITRA_USE_BUNDLED_QT)
-        # Make sure the Qt bin directory is in the prefix path for later use, such as in post-build scripts.
-        get_target_property(qmake_executable Qt6::qmake IMPORTED_LOCATION)
-        get_filename_component(qt_bin_dir "${qmake_executable}" DIRECTORY)
-        list(APPEND CMAKE_PREFIX_PATH ${qt_bin_dir})
-    endif()
-endif()
-
-# Ensure libusb is properly configured (based on dolphin libusb include)
-if (ENABLE_LIBUSB)
-    if(NOT APPLE)
-        include(FindPkgConfig)
-        find_package(LibUSB)
-    endif()
-    if (NOT LIBUSB_FOUND)
-        add_subdirectory(externals/libusb)
-        set(LIBUSB_INCLUDE_DIR "")
-        set(LIBUSB_LIBRARIES usb)
-    endif()
 endif()
 
 # Use system tsl::robin_map if available (otherwise we fallback to version bundled with dynarmic)
@@ -249,7 +240,7 @@ find_package(tsl-robin-map QUIET)
 # ======================================
 
 if (APPLE)
-    if (CITRA_USE_BUNDLED_MOLTENVK)
+    if (NOT USE_SYSTEM_MOLTENVK)
         download_moltenvk()
     endif()
     find_library(MOLTENVK_LIBRARY MoltenVK REQUIRED)
@@ -313,7 +304,7 @@ if (CLANG_FORMAT)
             add_custom_target(clang-format
                 COMMAND powershell.exe -Command "Get-ChildItem '${SRCS}/*' -Include *.cpp,*.h,*.mm -Recurse | Foreach {&'${CLANG_FORMAT}' -i $_.fullname}"
                 COMMENT ${CCOMMENT})
-    endif()
+        endif()
     else()
         add_custom_target(clang-format
             COMMAND find ${SRCS} -iname *.h -o -iname *.cpp -o -iname *.mm | xargs ${CLANG_FORMAT} -i
@@ -371,11 +362,6 @@ endif()
 enable_testing()
 add_subdirectory(externals)
 
-# See externals/CMakeLists.txt
-foreach(def ${CRYPTOPP_COMPILE_DEFINITIONS})
-    add_definitions(-D${def})
-endforeach()
-
 # Boost
 if (USE_SYSTEM_BOOST)
     find_package(Boost 1.70.0 COMPONENTS serialization iostreams REQUIRED)
@@ -394,6 +380,11 @@ if (ENABLE_SDL2 AND USE_SYSTEM_SDL2)
     add_library(SDL2::SDL2 ALIAS SDL2)
 endif()
 
+if (ENABLE_LIBUSB AND USE_SYSTEM_LIBUSB)
+    include(FindPkgConfig)
+    find_package(LibUSB)
+endif()
+
 add_subdirectory(src)
 add_subdirectory(dist/installer)
 
@@ -405,6 +396,20 @@ else()
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT citra)
 endif()
 
+# Create target for outputting distributable bundles.
+if (NOT ANDROID AND NOT IOS)
+    include(BundleTarget)
+    if (ENABLE_SDL2_FRONTEND)
+        bundle_target(citra)
+    endif()
+    if (ENABLE_QT)
+        bundle_target(citra-qt)
+    endif()
+    if (ENABLE_DEDICATED_ROOM)
+        bundle_target(citra-room)
+    endif()
+endif()
+
 # Installation instructions
 # =========================
 
@@ -413,7 +418,7 @@ endif()
 # http://standards.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html
 # http://standards.freedesktop.org/shared-mime-info-spec/shared-mime-info-spec-latest.html
 if(ENABLE_QT AND UNIX AND NOT APPLE)
-    install(FILES "${PROJECT_SOURCE_DIR}/dist/citra.desktop"
+    install(FILES "${PROJECT_SOURCE_DIR}/dist/citra-qt.desktop"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications")
     install(FILES "${PROJECT_SOURCE_DIR}/dist/citra.svg"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps")

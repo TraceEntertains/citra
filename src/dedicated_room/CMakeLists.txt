@@ -12,10 +12,6 @@ target_link_libraries(citra-room PRIVATE citra_common network)
 if (ENABLE_WEB_SERVICE)
     target_compile_definitions(citra-room PRIVATE -DENABLE_WEB_SERVICE)
     target_link_libraries(citra-room PRIVATE web_service)
-    if (MSVC AND OPENSSL_DLL_DIR)
-        include(CopyCitraOpensslDeps)
-        copy_citra_openssl_deps(citra-room)
-    endif()
 endif()
 
 target_link_libraries(citra-room PRIVATE cryptopp)
@@ -30,4 +26,10 @@ endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(citra-room PRIVATE precompiled_headers.h)
+endif()
+
+# Bundle in-place on MSVC so dependencies can be resolved by builds.
+if (MSVC)
+    include(BundleTarget)
+    bundle_target_in_place(citra-room)
 endif()

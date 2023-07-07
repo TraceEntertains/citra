@@ -57,6 +57,7 @@ add_library(citra_common STATIC
     detached_tasks.h
     bit_field.h
     bit_set.h
+    bounded_threadsafe_queue.h
     cityhash.cpp
     cityhash.h
     color.h
@@ -73,6 +74,7 @@ add_library(citra_common STATIC
     dynamic_library/ffmpeg.h
     error.cpp
     error.h
+    expected.h
     file_util.cpp
     file_util.h
     hash.h
@@ -84,8 +86,10 @@ add_library(citra_common STATIC
     logging/filter.h
     logging/formatter.h
     logging/log.h
+    logging/log_entry.h
     logging/text_formatter.cpp
     logging/text_formatter.h
+    logging/types.h
     math_util.h
     memory_detect.cpp
     memory_detect.h
@@ -138,12 +142,14 @@ add_library(citra_common STATIC
     zstd_compression.h
 )
 
+if (APPLE)
+    target_sources(citra_common PUBLIC
+        apple_authorization.h
+        apple_authorization.cpp
+    )
+endif()
+
 if (MSVC)
-  target_compile_definitions(citra_common PRIVATE
-    # The standard library doesn't provide any replacement for codecvt yet
-    # so we can disable this deprecation warning for the time being.
-    _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
-  )
   target_compile_options(citra_common PRIVATE
     /W4
 
@@ -169,4 +175,7 @@ endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(citra_common PRIVATE precompiled_headers.h)
+endif()
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL GNU)
+  target_link_libraries(citra_common PRIVATE backtrace dl)
 endif()
