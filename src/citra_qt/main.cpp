@@ -1171,20 +1171,18 @@ void GMainWindow::BootGame(const QString& filename) {
         movie.PrepareForPlayback(movie_playback_path.toStdString());
     }
 
-    u64 title_id{0};
     const std::string path = filename.toStdString();
     const auto loader = Loader::GetLoader(path);
 
-    if (loader && loader->ReadProgramId(title_id) == Loader::ResultStatus::Success) {
-        // Load per game settings
-        const std::string name{FileUtil::GetFilename(filename.toStdString())};
-        const std::string config_file_name =
-            title_id == 0 ? name : fmt::format("{:016X}", title_id);
-        Config per_game_config(config_file_name, Config::ConfigType::PerGameConfig);
-        system.ApplySettings();
+    u64 title_id{0};
+    loader->ReadProgramId(title_id);
 
-        LOG_INFO(Frontend, "Using per game config file for title id {}", config_file_name);
-    }
+    // Load per game settings
+    const std::string name{FileUtil::GetFilename(filename.toStdString())};
+    const std::string config_file_name = title_id == 0 ? name : fmt::format("{:016X}", title_id);
+    LOG_INFO(Frontend, "Loading per game config file for title {}", config_file_name);
+    Config per_game_config(config_file_name, Config::ConfigType::PerGameConfig);
+    system.ApplySettings();
 
     Settings::LogSettings();
 
@@ -1223,7 +1221,7 @@ void GMainWindow::BootGame(const QString& filename) {
     }
 
     // Create and start the emulation thread
-    emu_thread = std::make_unique<EmuThread>(*render_window);
+    emu_thread = std::make_unique<EmuThread>(system, *render_window);
     emit EmulationStarting(emu_thread.get());
     emu_thread->start();
 
@@ -1814,7 +1812,7 @@ void GMainWindow::OnLoadComplete() {
 
 void GMainWindow::OnMenuReportCompatibility() {
     if (!NetSettings::values.citra_token.empty() && !NetSettings::values.citra_username.empty()) {
-        CompatDB compatdb{this};
+        CompatDB compatdb{system.TelemetrySession(), this};
         compatdb.exec();
     } else {
         QMessageBox::critical(this, tr("Missing Citra Account"),
@@ -2931,7 +2929,7 @@ int main(int argc, char* argv[]) {
     GMainWindow main_window(system);
 
     // Register frontend applets
-    Frontend::RegisterDefaultApplets();
+    Frontend::RegisterDefaultApplets(system);
 
     system.RegisterMiiSelector(std::make_shared<QtMiiSelector>(main_window));
     system.RegisterSoftwareKeyboard(std::make_shared<QtKeyboard>(main_window));

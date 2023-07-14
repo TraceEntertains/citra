@@ -32,8 +32,8 @@ namespace AudioCore {
 class DspInterface;
 }
 
-namespace RPC {
-class RPCServer;
+namespace Core::RPC {
+class Server;
 }
 
 namespace Service {
@@ -384,7 +384,7 @@ private:
     std::shared_ptr<Frontend::ImageInterface> registered_image_interface;
 
     /// RPC Server for scripting support
-    std::unique_ptr<RPC::RPCServer> rpc_server;
+    std::unique_ptr<RPC::Server> rpc_server;
 
     std::unique_ptr<Service::FS::ArchiveManager> archive_manager;
 
