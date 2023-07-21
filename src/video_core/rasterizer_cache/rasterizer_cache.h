@@ -10,10 +10,12 @@
 #include "common/alignment.h"
 #include "common/logging/log.h"
 #include "common/microprofile.h"
+#include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/memory.h"
 #include "video_core/custom_textures/custom_tex_manager.h"
 #include "video_core/rasterizer_cache/rasterizer_cache_base.h"
+#include "video_core/rasterizer_cache/surface_base.h"
 #include "video_core/regs.h"
 #include "video_core/renderer_base.h"
 #include "video_core/texture/texture_decode.h"
@@ -1212,7 +1214,7 @@ void RasterizerCache<T>::ClearAll(bool flush) {
 
     // Remove the whole cache without really looking at it.
     cached_pages -= flush_interval;
-    dirty_regions -= SurfaceInterval(0x0, 0xFFFFFFFF);
+    dirty_regions.clear();
     page_table.clear();
     remove_surfaces.clear();
 }
@@ -1366,24 +1368,26 @@ void RasterizerCache<T>::UnregisterSurface(SurfaceId surface_id) {
         surfaces.erase(vector_it);
     });
 
-    if (True(surface.flags & SurfaceFlagBits::Tracked)) {
-        auto it = texture_cube_cache.begin();
-        while (it != texture_cube_cache.end()) {
-            std::array<SurfaceId, 6>& face_ids = it->second.face_ids;
-            const auto array_it = std::find(face_ids.begin(), face_ids.end(), surface_id);
-            if (array_it != face_ids.end()) {
-                *array_it = SurfaceId{};
-            }
-            if (std::none_of(face_ids.begin(), face_ids.end(), [](SurfaceId id) { return id; })) {
-                slot_surfaces.erase(it->second.surface_id);
-                it = texture_cube_cache.erase(it);
-                continue;
-            }
-            it++;
-        }
+    SCOPE_EXIT({ slot_surfaces.erase(surface_id); });
+
+    if (False(surface.flags & SurfaceFlagBits::Tracked)) {
+        return;
     }
 
-    slot_surfaces.erase(surface_id);
+    std::erase_if(texture_cube_cache, [&](auto& pair) {
+        TextureCube& cube = pair.second;
+        for (SurfaceId& face_id : cube.face_ids) {
+            if (face_id == surface_id) {
+                face_id = SurfaceId{};
+            }
+        }
+        if (std::none_of(cube.face_ids.begin(), cube.face_ids.end(),
+                         [](SurfaceId id) { return id; })) {
+            slot_surfaces.erase(cube.surface_id);
+            return true;
+        }
+        return false;
+    });
 }
 
 template <class T>
