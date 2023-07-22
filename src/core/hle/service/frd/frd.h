@@ -66,15 +66,15 @@ private:
 
 struct FriendPresence {
     GameMode game_mode;
-    u32_le unk;
-    //std::array<u16_le, FRIEND_GAME_MODE_DESCRIPTION_SIZE> description;
+    //u32_le unk;
+    std::array<u16_le, FRIEND_GAME_MODE_DESCRIPTION_SIZE> description;
 
 private:
     template <class Archive>
     void serialize(Archive& ar, const unsigned int) {
         ar& game_mode;
-        //ar& description;
-        ar& unk;
+        ar& description;
+        //ar& unk;
     }
     friend class boost::serialization::access;
 };
