@@ -1374,20 +1374,22 @@ void RasterizerCache<T>::UnregisterSurface(SurfaceId surface_id) {
         return;
     }
 
-    std::erase_if(texture_cube_cache, [&](auto& pair) {
-        TextureCube& cube = pair.second;
+    auto it = texture_cube_cache.begin();
+    while (it != texture_cube_cache.end()) {
+        TextureCube& cube = it->second;
         for (SurfaceId& face_id : cube.face_ids) {
             if (face_id == surface_id) {
                 face_id = SurfaceId{};
             }
         }
         if (std::none_of(cube.face_ids.begin(), cube.face_ids.end(),
-                         [](SurfaceId id) { return id; })) {
+                            [](SurfaceId id) { return id; })) {
             slot_surfaces.erase(cube.surface_id);
-            return true;
+            it = texture_cube_cache.erase(it);
+        } else {
+            it++;
         }
-        return false;
-    });
+    }
 }
 
 template <class T>

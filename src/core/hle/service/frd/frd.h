@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <boost/uuid/detail/sha1.hpp>
 #include <memory>
 #include "common/common_types.h"
 #include "core/hle/mii.h"
@@ -65,13 +66,15 @@ private:
 
 struct FriendPresence {
     GameMode game_mode;
-    std::array<u16_le, FRIEND_GAME_MODE_DESCRIPTION_SIZE> description;
+    u32_le unk;
+    //std::array<u16_le, FRIEND_GAME_MODE_DESCRIPTION_SIZE> description;
 
 private:
     template <class Archive>
     void serialize(Archive& ar, const unsigned int) {
         ar& game_mode;
-        ar& description;
+        //ar& description;
+        ar& unk;
     }
     friend class boost::serialization::access;
 };
@@ -201,6 +204,13 @@ public:
     }
 
     u64_le raw;
+
+private:
+    template <class Archive>
+    void serialize(Archive& ar, const unsigned int) {
+        ar& raw;
+    }
+    friend class boost::serialization::access;
 };
 
 class FormattedTimestamp {
@@ -292,6 +302,13 @@ public:
     }
 
     u64_le raw;
+
+private:
+    template <class Archive>
+    void serialize(Archive& ar, const unsigned int) {
+        ar& raw;
+    }
+    friend class boost::serialization::access;
 };
 
 struct FriendInfo {
@@ -390,13 +407,13 @@ private:
     friend class boost::serialization::access;
 };
 
-enum NascEnvironment : u8 {
+enum class NascEnvironment : u8 {
     Prod = 0,
     Test = 1,
     Dev = 2
 };
 
-enum LocalAccountID : u8 {
+enum class LocalAccountID : u8 {
     Prod = 1,
     Test = 2,
     Dev = 3
@@ -441,6 +458,7 @@ private:
 
 struct FRDFriendlist {
     static constexpr u32_le MAGIC_FRIENDLIST = 0x4C465046;
+    static u32 my_friend_count;
 
     u32_le magic{MAGIC_FRIENDLIST};
     u32_le magic_number{MAGIC_NUMBER};
@@ -448,8 +466,8 @@ struct FRDFriendlist {
     std::array<FriendInfo, FRIEND_LIST_SIZE> friends{};
 
     std::optional<const FriendInfo*> GetFriendInfo(const FriendKey& key) {
-        for (int i = 0; i < my_friend_count; i++) {
-            if (friends[i].friend_key == key) {
+        for (u32 i = 0; i < my_friend_count; i++) {
+            if (friends[i].friendKey == key) {
                 return &friends[i];
             }
         }
@@ -560,6 +578,8 @@ public:
 
         void GetFriendPresence(Kernel::HLERequestContext& ctx);
 
+        void GetFriendScreenName(Kernel::HLERequestContext& ctx);
+
         void GetFriendMii(Kernel::HLERequestContext& ctx);
 
         /**
@@ -628,7 +648,6 @@ private:
     FRDAccount account;
     FRDFriendlist friendlist;
     FRDConfig config;
-    u32 my_friend_count;
 
     GameAuthenticationData last_game_auth_data{};
     FriendPresence my_presence{};
@@ -642,7 +661,10 @@ private:
 
     template <class Archive>
     void serialize(Archive& ar, const unsigned int) {
-        ar& my_account_data;
+        ar& my_data;
+        ar& account;
+        ar& friendlist;
+        ar& config;
         ar& last_game_auth_data;
         ar& my_presence;
     }

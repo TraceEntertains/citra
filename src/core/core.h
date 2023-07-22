@@ -9,7 +9,6 @@
 #include <mutex>
 #include <string>
 #include <boost/serialization/version.hpp>
-#include <boost/uuid/detail/sha1.hpp>
 #include "common/common_types.h"
 #include "core/frontend/applets/mii_selector.h"
 #include "core/frontend/applets/swkbd.h"

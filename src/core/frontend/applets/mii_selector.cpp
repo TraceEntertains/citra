@@ -53,7 +53,7 @@ std::vector<Mii::MiiData> LoadMiis() {
 
 void DefaultMiiSelector::Setup(const Frontend::MiiSelectorConfig& config) {
     MiiSelector::Setup(config);
-    Finalize(0, HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data.GetMiiData());
+    Finalize(0, HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data.mii_data);
 }
 
 } // namespace Frontend

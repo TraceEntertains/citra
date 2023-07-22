@@ -665,7 +665,7 @@ ResultCode NfcDevice::SetRegisterInfoPrivate(const RegisterInfoPrivate& register
 
     // Calculate mii CRC with the padding
     tag.file.owner_mii_aes_ccm = boost::crc<16, 0x1021, 0, 0, false, false>(
-        &register_info.mii_data, sizeof(HLE::Applets::MiiData) + sizeof(u16));
+        &register_info.mii_data, sizeof(Mii::MiiData) + sizeof(u16));
 
     settings.amiibo_name = register_info.amiibo_name;
     tag.file.owner_mii = register_info.mii_data;
@@ -1060,7 +1060,7 @@ void NfcDevice::UpdateSettingsCrc() {
 void NfcDevice::UpdateRegisterInfoCrc() {
 #pragma pack(push, 1)
     struct CrcData {
-        HLE::Applets::MiiData mii;
+        Mii::MiiData mii;
         INSERT_PADDING_BYTES(0x2);
         u16 mii_crc;
         u8 application_id_byte;
@@ -1100,9 +1100,9 @@ void NfcDevice::BuildAmiiboWithoutKeys() {
     SetAmiiboName(settings, {'c', 'i', 't', 'r', 'A', 'm', 'i', 'i', 'b', 'o'});
     settings.settings.font_region.Assign(0);
     settings.init_date = GetAmiiboDate();
-    tag.file.owner_mii = default_mii.selected_mii_data;
-    tag.file.padding = default_mii.unknown1;
-    tag.file.owner_mii_aes_ccm = default_mii.mii_data_checksum;
+    tag.file.owner_mii = default_mii.selected_mii_data.mii_data;
+    tag.file.padding = default_mii.selected_mii_data.unknown;
+    tag.file.owner_mii_aes_ccm = default_mii.selected_mii_data.crc16;
 
     // Admin info
     settings.settings.amiibo_initialized.Assign(1);

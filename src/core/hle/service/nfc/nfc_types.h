@@ -277,7 +277,7 @@ struct EncryptedAmiiboFile {
     AmiiboModelInfo model_info;       // Encrypted amiibo model info
     HashData keygen_salt;             // Salt
     HashData hmac_data;               // Hash
-    HLE::Applets::MiiData owner_mii;  // Encrypted Mii data
+    Mii::MiiData owner_mii;  // Encrypted Mii data
     u16 padding;                      // Mii Padding
     u16_be owner_mii_aes_ccm;         // Mii data AES-CCM MAC
     u64_be application_id;            // Encrypted Game id
@@ -301,7 +301,7 @@ struct NTAG215File {
     u16_be write_counter;      // Number of times the amiibo has been written?
     u8 amiibo_version;         // Amiibo file version
     AmiiboSettings settings;
-    HLE::Applets::MiiData owner_mii;  // Mii data
+    Mii::MiiData owner_mii;  // Mii data
     u16 padding;                      // Mii Padding
     u16_be owner_mii_aes_ccm;         // Mii data AES-CCM MAC
     u64_be application_id;            // Game id
@@ -417,7 +417,7 @@ struct ModelInfo {
 static_assert(sizeof(ModelInfo) == 0x36, "ModelInfo is an invalid size");
 
 struct RegisterInfo {
-    HLE::Applets::MiiData mii_data;
+    Mii::MiiData mii_data;
     INSERT_PADDING_BYTES(0x2);
     u16_be owner_mii_aes_ccm; // Mii data AES-CCM MAC
     AmiiboName amiibo_name;
@@ -430,7 +430,7 @@ struct RegisterInfo {
 static_assert(sizeof(RegisterInfo) == 0xA8, "RegisterInfo is an invalid size");
 
 struct RegisterInfoPrivate {
-    HLE::Applets::MiiData mii_data;
+    Mii::MiiData mii_data;
     INSERT_PADDING_BYTES(0x2);
     u16_be owner_mii_aes_ccm; // Mii data AES-CCM MAC
     AmiiboName amiibo_name;
