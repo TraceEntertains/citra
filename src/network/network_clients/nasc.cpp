@@ -50,7 +50,7 @@ namespace NetworkClient::NASC {
             return res;
         }
 
-        cli = std::make_unique<httplib::SSLClient>(nasc_url.c_str(), 443, client_cert, client_priv_key);
+        cli = std::make_unique<httplib::SSLClient>(nasc_url, 7071, client_cert, client_priv_key);
         cli->set_connection_timeout(TIMEOUT_SECONDS);
         cli->set_read_timeout(TIMEOUT_SECONDS);
         cli->set_write_timeout(TIMEOUT_SECONDS);
@@ -70,6 +70,7 @@ namespace NetworkClient::NASC {
         if (GetParameter(parameters, "fpdver", header_param)) {
             request.set_header("User-Agent", fmt::format("CTR FPD/{}", header_param));
         }
+
         request.set_header("Content-Type", "application/x-www-form-urlencoded");
 
         request.method = "POST";
@@ -78,6 +79,7 @@ namespace NetworkClient::NASC {
         boost::replace_all(request.body, "*", "%2A");
 
         httplib::Result result = cli->send(request);
+        LOG_INFO(Service_FRD, request.body.c_str());
         if (!result) {
             res.log_message =
                 fmt::format("Request to \"{}\" returned error {}", nasc_url, (int)result.error());
@@ -92,6 +94,7 @@ namespace NetworkClient::NASC {
                 fmt::format("Request to \"{}\" returned status {}", nasc_url, response.status);
             return res;
         }
+        LOG_INFO(Service_FRD, "test5");
 
         auto content_type = response.headers.find("content-type");
         if (content_type == response.headers.end() ||
@@ -102,6 +105,7 @@ namespace NetworkClient::NASC {
 
         httplib::Params out_parameters;
         httplib::detail::parse_query_text(response.body, out_parameters);
+        LOG_INFO(Service_FRD, response.body.c_str());
 
         int nasc_result;
         if (!GetParameter(out_parameters, "returncd", nasc_result)) {
@@ -114,6 +118,7 @@ namespace NetworkClient::NASC {
             res.log_message = fmt::format("NASC login failed with code 002-{:04d}", nasc_result);
             return res;
         }
+        LOG_INFO(Service_FRD, "test7");
 
         std::string locator;
         if (!GetParameter(out_parameters, "locator", locator)) {
@@ -126,6 +131,7 @@ namespace NetworkClient::NASC {
             res.log_message = "NASC response \"locator\" missing port delimiter";
             return res;
         }
+        LOG_INFO(Service_FRD, "test8");
         res.server_address = locator.substr(0, delimiter);
         std::string port_str = locator.substr(delimiter + 1);
         try {
@@ -138,6 +144,7 @@ namespace NetworkClient::NASC {
             res.log_message = "NASC response missing \"locator\"";
             return res;
         }
+        LOG_INFO(Service_FRD, "test9");
 
         res.auth_token = token->second;
 
@@ -147,6 +154,7 @@ namespace NetworkClient::NASC {
             return res;
         }
         res.time_stamp = server_time;
+        LOG_INFO(Service_FRD, "test10");
         return res;
     }
 

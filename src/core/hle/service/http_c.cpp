@@ -55,6 +55,8 @@ const ResultCode ERROR_WRONG_CERT_HANDLE = // 0xD8A0A0C9
 const ResultCode ERROR_CERT_ALREADY_SET = // 0xD8A0A03D
     ResultCode(61, ErrorModule::HTTP, ErrorSummary::InvalidState, ErrorLevel::Permanent);
 
+ClCert HTTP_C::ClCertA;
+
 void Context::MakeRequest() {
     ASSERT(state == RequestState::NotStarted);
 

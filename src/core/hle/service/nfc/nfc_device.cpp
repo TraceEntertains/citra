@@ -538,7 +538,6 @@ ResultCode NfcDevice::GetRegisterInfo(RegisterInfo& register_info) const {
     // TODO: Validate this data
     register_info = {
         .mii_data = tag.file.owner_mii,
-        .owner_mii_aes_ccm = tag.file.owner_mii_aes_ccm,
         .amiibo_name = settings.amiibo_name,
         .flags = static_cast<u8>(settings.settings.raw & 0xf),
         .font_region = settings.country_code_id,
@@ -628,7 +627,7 @@ ResultCode NfcDevice::DeleteRegisterInfo() {
 
     CryptoPP::AutoSeededRandomPool rng;
     const std::size_t mii_data_size =
-        sizeof(tag.file.owner_mii) + sizeof(tag.file.padding) + sizeof(tag.file.owner_mii_aes_ccm);
+        sizeof(tag.file.owner_mii);
     std::array<CryptoPP::byte, mii_data_size> buffer{};
     rng.GenerateBlock(buffer.data(), mii_data_size);
 
@@ -664,8 +663,7 @@ ResultCode NfcDevice::SetRegisterInfoPrivate(const RegisterInfoPrivate& register
     }
 
     // Calculate mii CRC with the padding
-    tag.file.owner_mii_aes_ccm = boost::crc<16, 0x1021, 0, 0, false, false>(
-        &register_info.mii_data, sizeof(Mii::MiiData) + sizeof(u16));
+    tag.file.owner_mii.FixChecksum();
 
     settings.amiibo_name = register_info.amiibo_name;
     tag.file.owner_mii = register_info.mii_data;
@@ -1060,9 +1058,7 @@ void NfcDevice::UpdateSettingsCrc() {
 void NfcDevice::UpdateRegisterInfoCrc() {
 #pragma pack(push, 1)
     struct CrcData {
-        Mii::MiiData mii;
-        INSERT_PADDING_BYTES(0x2);
-        u16 mii_crc;
+        Mii::ChecksummedMiiData mii;
         u8 application_id_byte;
         u8 unknown;
         u64 mii_extension;
@@ -1073,7 +1069,6 @@ void NfcDevice::UpdateRegisterInfoCrc() {
 
     const CrcData crc_data{
         .mii = tag.file.owner_mii,
-        .mii_crc = tag.file.owner_mii_aes_ccm,
         .application_id_byte = tag.file.application_id_byte,
         .unknown = tag.file.unknown,
         .mii_extension = tag.file.mii_extension,
@@ -1100,9 +1095,7 @@ void NfcDevice::BuildAmiiboWithoutKeys() {
     SetAmiiboName(settings, {'c', 'i', 't', 'r', 'A', 'm', 'i', 'i', 'b', 'o'});
     settings.settings.font_region.Assign(0);
     settings.init_date = GetAmiiboDate();
-    tag.file.owner_mii = default_mii.selected_mii_data.mii_data;
-    tag.file.padding = default_mii.selected_mii_data.unknown;
-    tag.file.owner_mii_aes_ccm = default_mii.selected_mii_data.crc16;
+    tag.file.owner_mii = default_mii.selected_mii_data;
 
     // Admin info
     settings.settings.amiibo_initialized.Assign(1);

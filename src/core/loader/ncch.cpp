@@ -191,10 +191,10 @@ void AppLoader_NCCH::ParseRegionLockoutInfo(u64 program_id) {
         }
         cfg->SetPreferredRegionCodes(regions);
     } else {
-        const auto region = Core::GetSystemTitleRegion(program_id);
-        if (region.has_value()) {
-            const std::array regions{region.value()};
-            cfg->SetPreferredRegionCodes(regions);
+        std::optional<std::vector<u32>> regionBuffer;
+        Core::GetSystemTitleRegion(program_id, regionBuffer);
+        if (regionBuffer.has_value()) {
+            cfg->SetPreferredRegionCodes(regionBuffer.value());
         }
     }
 }

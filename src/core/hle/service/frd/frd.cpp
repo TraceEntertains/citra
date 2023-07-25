@@ -2,22 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <array>
-#include <cstring>
-#include <ctime>
-#include <vector>
-#include "common/assert.h"
-#include "common/logging/log.h"
-#include "common/string_util.h"
-#include "core/core.h"
-#include "core/hle/ipc_helpers.h"
-#include "core/hle/result.h"
-#include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/frd/frd.h"
 #include "core/hle/service/frd/frd_a.h"
 #include "core/hle/service/frd/frd_u.h"
-#include "core/hle/service/fs/fs_user.h"
-#include "network/network_clients/nasc.h"
 
 SERVICE_CONSTRUCT_IMPL(Service::FRD::Module)
 
@@ -43,7 +30,7 @@ std::string ConvertU16ArrayToString(std::array<u16, size> u16Array) {
     return result;
 }
 
-void PIDToFC(u32 &principalId, u64 *friendCode) {
+u64 PIDToFC(u32 &principalId) {
 
     // Convert u32 to a byte array (Little-Endian assumed)
     u8 byteArray[4];
@@ -66,20 +53,25 @@ void PIDToFC(u32 &principalId, u64 *friendCode) {
     // Combine the principalId and checksum byte into a u64
     // make principalId a u64 by doing a bitwise and with 0xFFFFFFFF, and get the value of shiftedValue as a u64 by casting it to a u64 then shifting left 32
     // you could also accomplish this by shifting principalId right by 32 and shiftedValue like normal, but to avoid compiler warnings, doing a bitwise and is the best option
-    *friendCode = (principalId & 0xFFFFFFFF) | static_cast<u64>(shiftedValue) << 32;
+    return (principalId & 0xFFFFFFFF) | static_cast<u64>(shiftedValue) << 32;
+}
+
+u32 FCToPID(const u64 &friend_code) {
+    return static_cast<u32>(friend_code);
 }
 
 // Load file helper
 template <typename T>
-bool LoadSave(u32 classSize, T *loadStruct, const char *path) {
+bool LoadSave(u32 classSize, T *loadStruct, const char *path, std::unique_ptr<FileUtil::IOFile> &fileHandle) {
+    LOG_INFO(Service_FRD, path);
     std::string file = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir) + path;
     if (FileUtil::Exists(file)) {
-        FileUtil::IOFile iofile(file, "rb");
-        if (iofile.IsOpen() && iofile.GetSize() == classSize) {
-            iofile.ReadBytes(loadStruct, classSize);
+        fileHandle = std::make_unique<FileUtil::IOFile>(file, "rb");
+        if (fileHandle->IsOpen() && fileHandle->GetSize() == classSize) {
+            fileHandle->ReadBytes(loadStruct, classSize);
         }
         else {
-            iofile.Close();
+            fileHandle->Close();
             return false;
         }
     }
@@ -92,22 +84,23 @@ bool LoadSave(u32 classSize, T *loadStruct, const char *path) {
 
 // Load friendlist file helper
 template <typename T>
-bool LoadFlexSave(u32 classSize, u32 checkSize, u32 arraySize, T *loadStruct, u32 *loadInt, const char *path) {
+bool LoadFlexSave(u32 classSize, u32 checkSize, u32 arraySize, T *loadStruct, u32 *loadInt, const char *path, std::unique_ptr<FileUtil::IOFile> &fileHandle) {
+    LOG_INFO(Service_FRD, path);
     std::string file = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir) + path;
     if (FileUtil::Exists(file)) {
-        FileUtil::IOFile iofile(file, "rb");
-        if (iofile.IsOpen() && iofile.GetSize() % (classSize - checkSize) == 0) {
-            iofile.ReadBytes(loadStruct, classSize);
+        fileHandle = std::make_unique<FileUtil::IOFile>(file, "rb");
+        if (fileHandle->IsOpen() && fileHandle->GetSize() % (classSize - checkSize) == 0) {
+            fileHandle->ReadBytes(loadStruct, classSize);
 
-            if (iofile.GetSize() - checkSize > 0) {
-                *loadInt = (iofile.GetSize() - (classSize - checkSize)) / arraySize;
+            if (fileHandle->GetSize() - checkSize > 0) {
+                *loadInt = (fileHandle->GetSize() - (classSize - checkSize)) / arraySize;
             }
             else {
                 *loadInt = 0;
             }
         }
         else {
-            iofile.Close();
+            fileHandle->Close();
             return false;
         }
     }
@@ -116,6 +109,46 @@ bool LoadFlexSave(u32 classSize, u32 checkSize, u32 arraySize, T *loadStruct, u3
     }
 
     return true;
+}
+
+void LoadFRDSaves(SysmoduleHelpers::LocalAccountID enumId, FRDMyData *my_data, FRDAccount *account, FRDFriendlist *friendlist, std::unique_ptr<FileUtil::IOFile> &my_data_handle, std::unique_ptr<FileUtil::IOFile> &account_handle, std::unique_ptr<FileUtil::IOFile> &friendlist_handle) {
+    u32 id = static_cast<int>(enumId);
+
+    if (!LoadSave(sizeof(FRDMyData), my_data, fmt::format("{}/mydata", id).c_str(), my_data_handle)) {
+        *my_data = FRDMyData();
+        my_data_handle = nullptr;
+        LOG_INFO(Service_FRD, "No mydata file found, using default");
+    }
+
+    if (!LoadSave(sizeof(FRDAccount), account, fmt::format("{}/account", id).c_str(), account_handle)) {
+        *account = FRDAccount();
+        account_handle = nullptr;
+        LOG_INFO(Service_FRD, "No account file found, using default");
+    }
+
+    if (!LoadFlexSave(sizeof(FRDFriendlist), sizeof(std::array<FriendEntry, FRIEND_LIST_SIZE>), sizeof(FriendEntry), friendlist, &friendlist->my_friend_count, fmt::format("{}/friendlist", id).c_str(), friendlist_handle)) {
+        *friendlist = FRDFriendlist();
+        friendlist_handle = nullptr;
+        LOG_INFO(Service_FRD, "No friendlist file found, using default");
+    }
+
+    Core::System& system = Core::System::GetInstance();
+    auto cfg = Service::CFG::GetModule(system);
+    ASSERT_MSG(cfg, "CFG Module missing!");
+
+    my_data->profile.area = cfg->GetStateCode();
+    my_data->profile.country = cfg->GetCountryCode();
+    my_data->profile.language = cfg->GetSystemLanguage();
+    my_data->profile.region = cfg->GetRegionValue();
+    my_data->profile.platform = 2;
+}
+
+void LoadFRDConfig(FRDConfig *config, std::unique_ptr<FileUtil::IOFile> &config_handle) {
+    if (!LoadSave(sizeof(FRDConfig), config, "config", config_handle)) {
+        *config = FRDConfig();
+        config_handle = nullptr;
+        LOG_INFO(Service_FRD, "No config file found, using default");
+    }
 }
 
 void Module::Interface::HasLoggedIn(Kernel::HLERequestContext& ctx) {
@@ -149,12 +182,12 @@ void Module::Interface::Logout(Kernel::HLERequestContext& ctx) {
 void Module::Interface::GetMyFriendKey(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
+
+
     rb.Push(RESULT_SUCCESS);
 
-    u64 friendCode;
-    PIDToFC(frd->account.principal_id, &friendCode);
-
-    rb.PushRaw(friendCode);
+    // friendkey
+    rb.PushRaw(PIDToFC(frd->account.principal_id));
     rb.Push<u32>(0);
     rb.PushRaw(frd->account.principal_id);
 }
@@ -197,6 +230,13 @@ void Module::Interface::GetMyMii(Kernel::HLERequestContext& ctx) {
     IPC::RequestBuilder rb = rp.MakeBuilder(25, 0);
     rb.Push(RESULT_SUCCESS);
     rb.PushRaw<Mii::ChecksummedMiiData>(frd->my_data.mii);
+}
+
+void Module::Interface::GetMyLocalAccountId(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<SysmoduleHelpers::LongLocalAccountID>(frd->account.local_account_id);
 }
 
 void Module::Interface::GetMyFavoriteGame(Kernel::HLERequestContext& ctx) {
@@ -274,23 +314,23 @@ void Module::Interface::GetFriendScreenName(Kernel::HLERequestContext& ctx) {
     const u32 friend_key_count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
     const u32 unk1 = rp.Pop<u32>();
     const u32 unk2 = rp.Pop<u32>();
-    const std::vector<u8> friend_keys = rp.PopStaticBuffer();
-    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(friend_keys.data());
+    const std::vector<u8> frd_keys = rp.PopStaticBuffer();
+    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(frd_keys.data());
 
     u32 count = std::min(friend_key_count, std::min(max_screen_name_out, max_string_language_out));
 
     std::vector<u8> friend_names_vector(count * (max_screen_name_out * 2));
-    std::vector<u8> character_sets_vector(count * sizeof(TrivialCharacterSet));
+    std::vector<u8> character_sets_vector(count * sizeof(SysmoduleHelpers::TrivialCharacterSet));
     std::array<u16_le, FRIEND_SCREEN_NAME_SIZE>* friend_names = reinterpret_cast<std::array<u16_le, FRIEND_SCREEN_NAME_SIZE>*>(friend_names_vector.data());
-    TrivialCharacterSet* character_sets = reinterpret_cast<TrivialCharacterSet*>(character_sets_vector.data());
+    SysmoduleHelpers::TrivialCharacterSet* character_sets = reinterpret_cast<SysmoduleHelpers::TrivialCharacterSet*>(character_sets_vector.data());
 
     for (u32 i = 0; i < count; i++) {
-        auto friend_info = frd->friendlist.GetFriendInfo(friend_keys_data[i]);
-        if (friend_info.has_value()) {
-            friend_names[i] = friend_info.value()->screen_name;
-            character_sets[i] = friend_info.value()->character_set;
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            friend_names[i] = friend_entry.value()->screen_name;
+            character_sets[i] = friend_entry.value()->character_set;
         } else {
-            character_sets[i] = TrivialCharacterSet::JapanUsaEuropeAustralia;
+            character_sets[i] = SysmoduleHelpers::TrivialCharacterSet::JapanUsaEuropeAustralia;
         }
     }
 
@@ -300,9 +340,10 @@ void Module::Interface::GetFriendScreenName(Kernel::HLERequestContext& ctx) {
     rb.PushStaticBuffer(std::move(character_sets_vector), 1);
 }
 
+
 void Module::Interface::GetFriendMii(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
-    const u32 count = rp.Pop<u32>();
+    const u32 count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
     const std::vector<u8> frd_keys = rp.PopStaticBuffer();
     ASSERT(frd_keys.size() == count * sizeof(FriendKey));
     auto out_mii_buffer = rp.PopMappedBuffer();
@@ -314,9 +355,9 @@ void Module::Interface::GetFriendMii(Kernel::HLERequestContext& ctx) {
         reinterpret_cast<Mii::ChecksummedMiiData*>(out_mii_vector.data());
 
     for (u32 i = 0; i < count; i++) {
-        auto friend_info = frd->friendlist.GetFriendInfo(friend_keys_data[i]);
-        if (friend_info.has_value()) {
-            out_mii_data[i] = friend_info.value()->mii;
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            out_mii_data[i] = friend_entry.value()->mii;
         } else {
             out_mii_data[i] = Mii::ChecksummedMiiData();
         }
@@ -325,39 +366,139 @@ void Module::Interface::GetFriendMii(Kernel::HLERequestContext& ctx) {
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     rb.Push(RESULT_SUCCESS);
 
-    out_mii_buffer.Write(out_mii_vector.data(), 0,
-                         out_mii_vector.size() * sizeof(Mii::ChecksummedMiiData));
+    out_mii_buffer.Write(out_mii_vector.data(), 0, out_mii_vector.size());
     rb.PushMappedBuffer(out_mii_buffer);
 }
 
+
 void Module::Interface::GetFriendProfile(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
-    const u32 count = rp.Pop<u32>();
+    const u32 count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
     const std::vector<u8> frd_keys = rp.PopStaticBuffer();
     ASSERT(frd_keys.size() == count * sizeof(FriendKey));
 
+    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(frd_keys.data());
     std::vector<u8> buffer(sizeof(FriendProfile) * count, 0);
+    FriendProfile* out_friend_profile_data =
+        reinterpret_cast<FriendProfile*>(buffer.data());
+
+    for (u32 i = 0; i < count; i++) {
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            out_friend_profile_data[i] = friend_entry.value()->profile;
+        } else {
+            out_friend_profile_data[i] = FriendProfile();
+        }
+    }
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     rb.Push(RESULT_SUCCESS);
-    rb.PushStaticBuffer(std::move(buffer), 0);
 
-    LOG_WARNING(Service_FRD, "(STUBBED) called, count={}", count);
+    rb.PushStaticBuffer(std::move(buffer), 0);
 }
+
+void Module::Interface::GetFriendRelationship(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    const u32 count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
+    const std::vector<u8> frd_keys = rp.PopStaticBuffer();
+    ASSERT(frd_keys.size() == count * sizeof(FriendKey));
+
+    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(frd_keys.data());
+    std::vector<u8> buffer(sizeof(u8) * count, 0);
+    u8* out_friend_relationship_data =
+        reinterpret_cast<u8*>(buffer.data());
+
+    for (u32 i = 0; i < count; i++) {
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            out_friend_relationship_data[i] = friend_entry.value()->friendRelationship;
+        } else {
+            out_friend_relationship_data[i] = 0;
+        }
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+
+    rb.PushStaticBuffer(std::move(buffer), 0);
+}
+
 
 void Module::Interface::GetFriendAttributeFlags(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
-    const u32 count = rp.Pop<u32>();
+    const u32 count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
     const std::vector<u8> frd_keys = rp.PopStaticBuffer();
     ASSERT(frd_keys.size() == count * sizeof(FriendKey));
 
-    // TODO:(mailwl) figure out AttributeFlag size and zero all buffer. Assume 1 byte
+    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(frd_keys.data());
     std::vector<u8> buffer(sizeof(u32) * count, 0);
+    u32* out_friend_attribute_data =
+        reinterpret_cast<u32*>(buffer.data());
+
+    for (u32 i = 0; i < count; i++) {
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            out_friend_attribute_data[i] = friend_entry.value()->get_attribute();
+        } else {
+            out_friend_attribute_data[i] = 0;
+        }
+    }
+
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     rb.Push(RESULT_SUCCESS);
-    rb.PushStaticBuffer(std::move(buffer), 0);
 
-    LOG_WARNING(Service_FRD, "(STUBBED) called, count={}", count);
+    rb.PushStaticBuffer(std::move(buffer), 0);
+}
+
+void Module::Interface::GetFriendInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    const u32 count = std::min(rp.Pop<u32>(), FRIEND_LIST_SIZE);
+    const u32 unk1 = rp.Pop<u32>();
+    const u32 character_set = rp.Pop<u32>();
+    const std::vector<u8> frd_keys = rp.PopStaticBuffer();
+    ASSERT(frd_keys.size() == count * sizeof(FriendKey));
+    auto out_friend_entry_buffer = rp.PopMappedBuffer();
+    LOG_INFO(Service_FRD, fmt::format("size: {}, count: {}, sizeof(FriendInfo)*count: {}", out_friend_entry_buffer.GetSize(), count, sizeof(FriendInfo) * count).c_str());
+    ASSERT(out_friend_entry_buffer.GetSize() == count * sizeof(FriendInfo));
+
+
+    const FriendKey* friend_keys_data = reinterpret_cast<const FriendKey*>(frd_keys.data());
+    std::vector<u8> out_friend_entry_vector(count * sizeof(FriendInfo));
+    FriendInfo* out_friend_entry_data =
+        reinterpret_cast<FriendInfo*>(out_friend_entry_vector.data());
+
+    for (u32 i = 0; i < count; i++) {
+        auto friend_entry = frd->friendlist.GetFriendEntry(friend_keys_data[i]);
+        if (friend_entry.has_value()) {
+            out_friend_entry_data[i] = FriendInfo(*friend_entry.value());
+        } else {
+            out_friend_entry_data[i] = FriendInfo();
+        }
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+
+    out_friend_entry_buffer.Write(out_friend_entry_vector.data(), 0, out_friend_entry_vector.size());
+    rb.PushMappedBuffer(out_friend_entry_buffer);
+}
+
+void Module::Interface::IsIncludedInFriendList(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    const u64 friend_code = rp.Pop<u64>();
+    bool isInFriendList = false;
+
+    for (u32 i = 0; i < frd->friendlist.my_friend_count; i++) {
+        if (FCToPID(friend_code) == frd->friendlist.friends[i].friendKey.principalId) {
+            isInFriendList = true;
+            break;
+        }
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push<u32>(int(isInFriendList));
 }
 
 void Module::Interface::UnscrambleLocalFriendCode(Kernel::HLERequestContext& ctx) {
@@ -415,6 +556,19 @@ void Module::Interface::GetLastResponseResult(Kernel::HLERequestContext& ctx) {
     rb.Push(RESULT_SUCCESS);
 }
 
+void Module::Interface::PrincipalIdToFriendCode(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 principalId = rp.Pop<u32>();
+    u32 hashByte = PIDToFC(principalId) >> 32;
+
+    LOG_INFO(Service_FRD, fmt::format("PID: {}, Hash Byte: {}", principalId, hashByte).c_str());
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(3, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(principalId);
+    rb.Push(hashByte);
+}
+
 void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
     u32 gameID = rp.Pop<u32>();
@@ -450,13 +604,19 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
         return;
     }
 
-    std::string nasc_url = frd->account.nasc_environment == NascEnvironment::Prod ? "https://nasc.nintendowifi.net/ac" : "https://nasc.pretendo.cc/ac/";
-    NetworkClient::NASC::NASCClient nasc_client(
-        nasc_url, std::vector<u8>(0, { 0x00 }), std::vector<u8>(0, { 0x00 }));
-        //std::vector<u8>(std::begin(frd->my_account_data.ctr_common_prod_cert),
-        //                std::end(frd->my_account_data.ctr_common_prod_cert)),
-        //std::vector<u8>(std::begin(frd->my_account_data.ctr_common_prod_key),
-        //                std::end(frd->my_account_data.ctr_common_prod_key)));
+    std::string nasc_url;
+    switch (frd->account.nasc_environment) {
+        case SysmoduleHelpers::NascEnvironment::Prod:
+            nasc_url = "nasc.nintendowifi.net";
+            break;
+        case SysmoduleHelpers::NascEnvironment::Dev:
+            nasc_url = "nasc.pretendo.cc";
+            break;
+        case SysmoduleHelpers::NascEnvironment::Test:
+            nasc_url = "127.0.0.1";
+            break;
+    }
+    NetworkClient::NASC::NASCClient nasc_client(nasc_url, Service::HTTP::HTTP_C::ClCertA.certificate, Service::HTTP::HTTP_C::ClCertA.private_key);
     nasc_client.SetParameter("gameid", fmt::format("{:08X}", gameID));
     nasc_client.SetParameter("sdkver", fmt::format("{:03d}{:03d}", (u8)sdkMajor, (u8)sdkMinor));
     nasc_client.SetParameter("titleid", fmt::format("{:016X}", process->codeset->program_id));
@@ -488,11 +648,13 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
         nasc_client.SetParameter("devtime", std::string(time_buffer));
     }
 
-    //std::vector<u8> device_cert(sizeof(frd->my_account_data.device_cert));
-    //memcpy(device_cert.data(), frd->my_account_data.device_cert.data(), device_cert.size());
-    //nasc_client.SetParameter("fcdcert", device_cert);
+    std::vector<u8> device_cert(sizeof(SysmoduleHelpers::LocalFriendCodeSeed_B));
+    SysmoduleHelpers::LocalFriendCodeSeed_B* device_cert_data =
+        reinterpret_cast<SysmoduleHelpers::LocalFriendCodeSeed_B*>(device_cert.data());
+    *device_cert_data = SysmoduleHelpers::GetLFCS_B(frd->my_data.local_friend_code_seed);
+    nasc_client.SetParameter("fcdcert", device_cert);
     std::vector<u8> device_name;
-    for (int i = 0;
+    for (u32 i = 0;
          i < (sizeof(frd->my_data.unk68) / sizeof(u16)) - 1; i++) {
         u16_le unit = frd->my_data.unk68[i];
         if (!unit)
@@ -557,26 +719,41 @@ void Module::Interface::SetClientSdkVersion(Kernel::HLERequestContext& ctx) {
     LOG_WARNING(Service_FRD, "(STUBBED) called, version: 0x{:08X}", version);
 }
 
+void Module::Interface::SetLocalAccountId(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 id = rp.Pop<u32>();
+
+    if (frd->my_data_handle != nullptr && frd->my_data_handle->IsOpen()) frd->my_data_handle->Close();
+    if (frd->account_handle != nullptr && frd->account_handle->IsOpen()) frd->account_handle->Close();
+    if (frd->friendlist_handle != nullptr && frd->friendlist_handle->IsOpen()) frd->friendlist_handle->Close();
+    frd->my_data = {};
+    frd->account = {};
+    frd->friendlist = {};
+
+    if (frd->config_handle == nullptr) {
+        LoadFRDConfig(&frd->config, frd->config_handle);
+    }
+    frd->config.local_account_id = static_cast<SysmoduleHelpers::LocalAccountID>(id);
+    LOG_INFO(Service_FRD, fmt::format("{}", frd->config.local_account_id).c_str());
+
+    if (frd->config_handle != nullptr && frd->config_handle->IsOpen()) {
+        LOG_INFO(Service_FRD, "writing to file");
+        frd->config_handle->Seek(0, 0);
+        frd->config_handle->WriteBytes(&frd->config, sizeof(FRDConfig));
+        frd->config_handle->Flush();
+        frd->config_handle->Close();
+        frd->config = {};
+        LoadFRDConfig(&frd->config, frd->config_handle);
+    }
+    LoadFRDSaves(frd->config.local_account_id, &frd->my_data, &frd->account, &frd->friendlist, frd->my_data_handle, frd->account_handle, frd->friendlist_handle);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
 Module::Module(Core::System& system) : system(system) {
-    if (!LoadSave(sizeof(FRDMyData), &my_data, "/mydata")) {
-        my_data = FRDMyData();
-        LOG_INFO(Service_FRD, "No mydata file found, using default");
-    }
-
-    if (!LoadSave(sizeof(FRDAccount), &account, "/account")) {
-        account = FRDAccount();
-        LOG_INFO(Service_FRD, "No account file found, using default");
-    }
-
-    if (!LoadFlexSave(sizeof(FRDFriendlist), sizeof(std::array<FriendInfo, FRIEND_LIST_SIZE>), sizeof(FriendInfo), &friendlist, &friendlist.my_friend_count, "/friendlist")) {
-        friendlist = FRDFriendlist();
-        LOG_INFO(Service_FRD, "No friendlist file found, using default");
-    }
-
-    if (!LoadSave(sizeof(FRDConfig), &config, "/config")) {
-        config = FRDConfig();
-        LOG_INFO(Service_FRD, "No config file found, using default");
-    }
+    LoadFRDConfig(&config, config_handle);
+    LoadFRDSaves(config.local_account_id, &my_data, &account, &friendlist, my_data_handle, account_handle, friendlist_handle);
 };
 
 Module::~Module() = default;

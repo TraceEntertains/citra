@@ -264,9 +264,9 @@ public:
 
     u16 CalcChecksum();
 
-    MiiData mii_data{};
-    u16_be unknown{0};
-    u16_be crc16;
+    MiiData mii_data;
+    u16_be padding;
+    u16_be crc16; // Mii data AES-CCM MAC
 
     void FixChecksum() {
         crc16 = CalcChecksum();
@@ -275,9 +275,9 @@ public:
     template <class Archive>
     void serialize(Archive& ar, const unsigned int) {
         ar& mii_data;
-        u16 unknown_ = unknown;
-        ar& unknown_;
-        unknown = unknown_;
+        u16 padding_ = padding;
+        ar& padding_;
+        padding = padding_;
         u16 crc16_ = crc16;
         ar& crc16_;
         crc16 = crc16_;

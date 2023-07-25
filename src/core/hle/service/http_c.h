@@ -248,11 +248,20 @@ private:
     friend class boost::serialization::access;
 };
 
+struct ClCert {
+    std::vector<u8> certificate;
+    std::vector<u8> private_key;
+    bool init = false;
+};
+
 class HTTP_C final : public ServiceFramework<HTTP_C, SessionData> {
 public:
     HTTP_C();
 
+    static ClCert ClCertA;
+
 private:
+
     /**
      * HTTP_C::Initialize service function
      *  Inputs:
@@ -426,12 +435,6 @@ private:
 
     /// Global list of  ClientCert contexts currently opened.
     std::unordered_map<ClientCertContext::Handle, std::shared_ptr<ClientCertContext>> client_certs;
-
-    struct {
-        std::vector<u8> certificate;
-        std::vector<u8> private_key;
-        bool init = false;
-    } ClCertA;
 
 private:
     template <class Archive>

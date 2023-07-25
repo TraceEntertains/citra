@@ -764,14 +764,19 @@ static std::tuple<u32 /*region*/, SystemLanguage> AdjustLanguageInfoBlock(
     }};
     // Check if any available region supports the languages
     for (u32 region : region_code) {
+        LOG_INFO(Service_CFG, fmt::format("region code: {}", region).c_str());
         const auto& available = region_languages[region];
-        if (std::find(available.begin(), available.end(), language) != available.end()) {
-            // found a proper region, so return this region - language pair
-            return {region, language};
+        for (SystemLanguage lang : available) {
+            LOG_INFO(Service_CFG, fmt::format("language: {}", language).c_str());
+            if (lang == language) {
+                // found a proper region, so return this region - language pair
+                return {region, language};
+            }
         }
     }
     // The language is not available in any available region, so default to the first region and
     // language
+    LOG_INFO(Service_CFG, "Defaulted region");
     const u32 default_region = region_code[0];
     return {default_region, region_languages[default_region][0]};
 }

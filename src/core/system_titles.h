@@ -23,6 +23,6 @@ u64 GetHomeMenuTitleId(u32 region);
 std::string GetHomeMenuNcchPath(u32 region);
 
 /// Returns the region of a system title, if it can be determined.
-std::optional<u32> GetSystemTitleRegion(u64 title_id);
+void GetSystemTitleRegion(u64 title_id, std::optional<std::vector<u32>> &buffer);
 
 } // namespace Core

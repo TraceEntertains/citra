@@ -423,6 +423,8 @@ add_library(citra_core STATIC
     hle/service/soc_u.h
     hle/service/ssl_c.cpp
     hle/service/ssl_c.h
+    hle/service/sysmodule_helpers.cpp
+    hle/service/sysmodule_helpers.h
     hle/service/y2r_u.cpp
     hle/service/y2r_u.h
     hw/aes/arithmetic128.cpp

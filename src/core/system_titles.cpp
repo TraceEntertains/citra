@@ -1156,26 +1156,28 @@ std::string GetHomeMenuNcchPath(u32 region) {
                                             GetHomeMenuTitleId(region));
 }
 
-std::optional<u32> GetSystemTitleRegion(u64 title_id) {
+void GetSystemTitleRegion(u64 title_id, std::optional<std::vector<u32>> &buffer) {
     const auto title_id_high = static_cast<u32>(title_id >> 32);
     const auto category = std::find_if(system_titles.begin(), system_titles.end(),
                                        [title_id_high](const SystemTitleCategory& category) {
                                            return category.title_id_high == title_id_high;
                                        });
     if (category == system_titles.end()) {
-        return std::nullopt;
+        buffer = std::nullopt;
     }
 
     const auto title_id_low = static_cast<u32>(title_id & 0xFFFFFFFF);
     for (const auto& title : category->titles) {
         for (u32 region = 0; region < NUM_SYSTEM_TITLE_REGIONS; region++) {
             if (title.title_id_lows[region] == title_id_low) {
-                return region;
+                buffer->push_back(region);
             }
         }
     }
 
-    return std::nullopt;
+    if (buffer->empty()) {
+        buffer = std::nullopt;
+    }
 }
 
 } // namespace Core
