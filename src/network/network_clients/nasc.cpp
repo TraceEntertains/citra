@@ -9,6 +9,17 @@ namespace NetworkClient::NASC {
 
     constexpr std::size_t TIMEOUT_SECONDS = 15;
 
+    // Custom function to perform case-insensitive comparison
+    bool IsEqualIgnoreCase(const std::string& str1, const std::string& str2) {
+        if (str1.size() != str2.size()) {
+            return false;
+        }
+
+        return std::equal(str1.begin(), str1.end(), str2.begin(), [](char a, char b) {
+            return std::tolower(a) == std::tolower(b);
+        });
+    }
+
     void NASCClient::Initialize(const std::vector<u8>& cert, const std::vector<u8>& key) {
         Clear();
 
@@ -37,7 +48,7 @@ namespace NetworkClient::NASC {
         encoder.Put(value.data(), value.size());
         encoder.MessageEnd();
 
-        parameters.emplace(key, out);
+        parameters.emplace_back(key, out);
     }
 
     NASCClient::NASCResult NASCClient::Perform() {
@@ -50,7 +61,7 @@ namespace NetworkClient::NASC {
             return res;
         }
 
-        cli = std::make_unique<httplib::SSLClient>(nasc_url, 7071, client_cert, client_priv_key);
+        cli = std::make_unique<httplib::SSLClient>(nasc_url, 443, client_cert, client_priv_key);
         cli->set_connection_timeout(TIMEOUT_SECONDS);
         cli->set_read_timeout(TIMEOUT_SECONDS);
         cli->set_write_timeout(TIMEOUT_SECONDS);
@@ -68,14 +79,21 @@ namespace NetworkClient::NASC {
         }
         header_param.clear();
         if (GetParameter(parameters, "fpdver", header_param)) {
-            request.set_header("User-Agent", fmt::format("CTR FPD/{}", header_param));
+            request.set_header("User-Agent", fmt::format("CTR FPD/00{}", header_param));
         }
 
         request.set_header("Content-Type", "application/x-www-form-urlencoded");
 
         request.method = "POST";
         request.path = "/ac";
-        request.body = httplib::detail::params_to_query_str(parameters);
+
+        for (auto it = parameters.begin(); it != parameters.end(); ++it) {
+            if (it != parameters.begin()) { request.body += "&"; }
+            request.body += it->first;
+            request.body += "=";
+            request.body += httplib::detail::encode_query_param(it->second);
+        }
+
         boost::replace_all(request.body, "*", "%2A");
 
         httplib::Result result = cli->send(request);
@@ -95,17 +113,35 @@ namespace NetworkClient::NASC {
             return res;
         }
         LOG_INFO(Service_FRD, "test5");
+        LOG_INFO(Service_FRD, response.body.c_str());
 
-        auto content_type = response.headers.find("content-type");
-        if (content_type == response.headers.end() ||
-            content_type->second.find("text/plain") == content_type->second.npos) {
+        auto content_type = response.get_header_value("content-type");
+        if (content_type == "" || content_type == "text/plain") {
             res.log_message = "Unknown response body from NASC server";
             return res;
         }
 
-        httplib::Params out_parameters;
-        httplib::detail::parse_query_text(response.body, out_parameters);
-        LOG_INFO(Service_FRD, response.body.c_str());
+        NASCParams out_parameters;
+        std::set<std::string> cache;
+        httplib::detail::split(response.body.data(), response.body.data() + response.body.size(), '&', [&](const char *b, const char *e) {
+            std::string kv(b, e);
+            if (cache.find(kv) != cache.end()) { return; }
+            cache.insert(kv);
+
+            std::string key;
+            std::string val;
+            httplib::detail::split(b, e, '=', [&](const char *b2, const char *e2) {
+            if (key.empty()) {
+                key.assign(b2, e2);
+            } else {
+                val.assign(b2, e2);
+            }
+            });
+
+            if (!key.empty()) {
+            out_parameters.emplace_back(httplib::detail::decode_url(key, true), httplib::detail::decode_url(val, true));
+            }
+        });
 
         int nasc_result;
         if (!GetParameter(out_parameters, "returncd", nasc_result)) {
@@ -139,7 +175,10 @@ namespace NetworkClient::NASC {
         } catch (std::exception const&) {
         }
 
-        auto token = out_parameters.find("token");
+        std::string tokenName("token");
+        auto token = std::find_if(out_parameters.begin(), out_parameters.end(), [tokenName](const std::pair<std::string, std::string>& p) {
+            return p.first == tokenName;
+        });
         if (token == out_parameters.end()) {
             res.log_message = "NASC response missing \"locator\"";
             return res;
@@ -158,14 +197,16 @@ namespace NetworkClient::NASC {
         return res;
     }
 
-    bool NASCClient::GetParameter(const httplib::Params& param, const std::string& key,
+    bool NASCClient::GetParameter(const NASCParams& param, const std::string& key,
                                   std::string& out) {
         using namespace CryptoPP;
         using Name::DecodingLookupArray;
         using Name::Pad;
         using Name::PaddingByte;
 
-        auto field = param.find(key);
+        auto field = std::find_if(param.begin(), param.end(), [key](const std::pair<std::string, std::string>& p) {
+            return p.first == key;
+        });
         if (field == param.end())
             return false;
 
@@ -182,7 +223,7 @@ namespace NetworkClient::NASC {
         return true;
     }
 
-    bool NASCClient::GetParameter(const httplib::Params& param, const std::string& key, int& out) {
+    bool NASCClient::GetParameter(const NASCParams& param, const std::string& key, int& out) {
         std::string out_str;
         if (!GetParameter(param, key, out_str)) {
             return false;
@@ -195,7 +236,7 @@ namespace NetworkClient::NASC {
         }
     }
 
-    bool NASCClient::GetParameter(const httplib::Params& param, const std::string& key,
+    bool NASCClient::GetParameter(const NASCParams& param, const std::string& key,
                                   long long& out) {
         std::string out_str;
         if (!GetParameter(param, key, out_str)) {

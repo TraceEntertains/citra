@@ -23,6 +23,9 @@
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/http_c.h"
 #include "core/hle/service/fs/fs_user.h"
+#include "core/file_sys/file_backend.h"
+#include "core/file_sys/archive_systemsavedata.h"
+#include "core/file_sys/errors.h"
 #include "network/network_clients/nasc.h"
 
 namespace Core {
@@ -386,7 +389,7 @@ struct FRDConfig {
     u32_le magic{MAGIC_CONFIG};
     u32_le magic_number{MAGIC_NUMBER};
     u64_le padding1{};
-    SysmoduleHelpers::LocalAccountID local_account_id{SysmoduleHelpers::LocalAccountID::Test};
+    SysmoduleHelpers::LocalAccountID local_account_id{/*SysmoduleHelpers::LocalAccountID::Test*/};
 
 private:
     template <class Archive>
@@ -550,15 +553,18 @@ public:
     };
 
 private:
+    FRDConfig config;
+
     FRDMyData my_data;
     FRDAccount account;
     FRDFriendlist friendlist;
-    FRDConfig config;
 
-    std::unique_ptr<FileUtil::IOFile> my_data_handle;
-    std::unique_ptr<FileUtil::IOFile> account_handle;
-    std::unique_ptr<FileUtil::IOFile> friendlist_handle;
-    std::unique_ptr<FileUtil::IOFile> config_handle;
+    std::unique_ptr<FileSys::ArchiveBackend> file_sys_handle;
+
+    std::unique_ptr<FileSys::FileBackend> my_data_handle;
+    std::unique_ptr<FileSys::FileBackend> account_handle;
+    std::unique_ptr<FileSys::FileBackend> friendlist_handle;
+    std::unique_ptr<FileSys::FileBackend> config_handle;
 
     GameAuthenticationData last_game_auth_data{};
     FriendPresence my_presence{};

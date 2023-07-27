@@ -60,94 +60,58 @@ u32 FCToPID(const u64 &friend_code) {
     return static_cast<u32>(friend_code);
 }
 
-// Load file helper
-template <typename T>
-bool LoadSave(u32 classSize, T *loadStruct, const char *path, std::unique_ptr<FileUtil::IOFile> &fileHandle) {
-    LOG_INFO(Service_FRD, path);
-    std::string file = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir) + path;
-    if (FileUtil::Exists(file)) {
-        fileHandle = std::make_unique<FileUtil::IOFile>(file, "rb");
-        if (fileHandle->IsOpen() && fileHandle->GetSize() == classSize) {
-            fileHandle->ReadBytes(loadStruct, classSize);
-        }
-        else {
-            fileHandle->Close();
-            return false;
-        }
-    }
-    else {
-        return false;
-    }
-
-    return true;
-}
-
-// Load friendlist file helper
-template <typename T>
-bool LoadFlexSave(u32 classSize, u32 checkSize, u32 arraySize, T *loadStruct, u32 *loadInt, const char *path, std::unique_ptr<FileUtil::IOFile> &fileHandle) {
-    LOG_INFO(Service_FRD, path);
-    std::string file = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir) + path;
-    if (FileUtil::Exists(file)) {
-        fileHandle = std::make_unique<FileUtil::IOFile>(file, "rb");
-        if (fileHandle->IsOpen() && fileHandle->GetSize() % (classSize - checkSize) == 0) {
-            fileHandle->ReadBytes(loadStruct, classSize);
-
-            if (fileHandle->GetSize() - checkSize > 0) {
-                *loadInt = (fileHandle->GetSize() - (classSize - checkSize)) / arraySize;
-            }
-            else {
-                *loadInt = 0;
-            }
-        }
-        else {
-            fileHandle->Close();
-            return false;
-        }
-    }
-    else {
-        return false;
-    }
-
-    return true;
-}
-
-void LoadFRDSaves(SysmoduleHelpers::LocalAccountID enumId, FRDMyData *my_data, FRDAccount *account, FRDFriendlist *friendlist, std::unique_ptr<FileUtil::IOFile> &my_data_handle, std::unique_ptr<FileUtil::IOFile> &account_handle, std::unique_ptr<FileUtil::IOFile> &friendlist_handle) {
+void LoadFRDSaves(SysmoduleHelpers::LocalAccountID enumId, FRDMyData &my_data, FRDAccount &account, FRDFriendlist &friendlist, std::unique_ptr<FileSys::FileBackend> &my_data_handle, std::unique_ptr<FileSys::FileBackend> &account_handle, std::unique_ptr<FileSys::FileBackend> &friendlist_handle, std::unique_ptr<FileSys::ArchiveBackend> &file_sys_handle) {
     u32 id = static_cast<int>(enumId);
 
-    if (!LoadSave(sizeof(FRDMyData), my_data, fmt::format("{}/mydata", id).c_str(), my_data_handle)) {
-        *my_data = FRDMyData();
+    if (!SysmoduleHelpers::LoadSave(sizeof(FRDMyData), my_data, fmt::format("/{}/mydata", id).c_str(), my_data_handle, file_sys_handle)) {
+        my_data = FRDMyData();
         my_data_handle = nullptr;
         LOG_INFO(Service_FRD, "No mydata file found, using default");
     }
 
-    if (!LoadSave(sizeof(FRDAccount), account, fmt::format("{}/account", id).c_str(), account_handle)) {
-        *account = FRDAccount();
+    if (!SysmoduleHelpers::LoadSave(sizeof(FRDAccount), account, fmt::format("/{}/account", id).c_str(), account_handle, file_sys_handle)) {
+        account = FRDAccount();
         account_handle = nullptr;
         LOG_INFO(Service_FRD, "No account file found, using default");
     }
 
-    if (!LoadFlexSave(sizeof(FRDFriendlist), sizeof(std::array<FriendEntry, FRIEND_LIST_SIZE>), sizeof(FriendEntry), friendlist, &friendlist->my_friend_count, fmt::format("{}/friendlist", id).c_str(), friendlist_handle)) {
-        *friendlist = FRDFriendlist();
+    if (!SysmoduleHelpers::LoadFlexSave(sizeof(FRDFriendlist), sizeof(std::array<FriendEntry, FRIEND_LIST_SIZE>), sizeof(FriendEntry), friendlist, &friendlist.my_friend_count, fmt::format("/{}/friendlist", id).c_str(), friendlist_handle, file_sys_handle)) {
+        friendlist = FRDFriendlist();
         friendlist_handle = nullptr;
         LOG_INFO(Service_FRD, "No friendlist file found, using default");
     }
-
-    Core::System& system = Core::System::GetInstance();
-    auto cfg = Service::CFG::GetModule(system);
-    ASSERT_MSG(cfg, "CFG Module missing!");
-
-    my_data->profile.area = cfg->GetStateCode();
-    my_data->profile.country = cfg->GetCountryCode();
-    my_data->profile.language = cfg->GetSystemLanguage();
-    my_data->profile.region = cfg->GetRegionValue();
-    my_data->profile.platform = 2;
 }
 
-void LoadFRDConfig(FRDConfig *config, std::unique_ptr<FileUtil::IOFile> &config_handle) {
-    if (!LoadSave(sizeof(FRDConfig), config, "config", config_handle)) {
-        *config = FRDConfig();
+void LoadFRDConfig(FRDConfig &config, std::unique_ptr<FileSys::FileBackend> &config_handle, std::unique_ptr<FileSys::ArchiveBackend> &file_sys_handle) {
+    if (!SysmoduleHelpers::LoadSave(sizeof(FRDConfig), config, "/config", config_handle, file_sys_handle)) {
+        config = FRDConfig();
         config_handle = nullptr;
         LOG_INFO(Service_FRD, "No config file found, using default");
+    }
+}
+
+void InitFileSys(std::unique_ptr<FileSys::ArchiveBackend> &file_sys_handle) {
+    const std::string& nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
+    FileSys::ArchiveFactory_SystemSaveData systemsavedata_factory(nand_directory);
+
+    // Open the SystemSaveData archive 0x00010032
+    constexpr std::array<u8, 8> frd_system_savedata_id{
+        0x00, 0x00, 0x00, 0x00, 0x32, 0x00, 0x01, 0x00,
+    };
+    FileSys::Path archive_path(frd_system_savedata_id);
+    auto archive_result = systemsavedata_factory.Open(archive_path, 0);
+
+    // If the archive didn't exist, create the files inside
+    if (archive_result.Code() == FileSys::ERROR_NOT_FOUND) {
+        // Format the archive to create the directories
+        systemsavedata_factory.Format(archive_path, FileSys::ArchiveFormatInfo(), 0);
+
+        // Open it again to get a valid archive now that the folder exists
+        file_sys_handle = systemsavedata_factory.Open(archive_path, 0).Unwrap();
+    } else {
+        ASSERT_MSG(archive_result.Succeeded(), "Could not open the FRD SystemSaveData archive!");
+
+        file_sys_handle = std::move(archive_result).Unwrap();
     }
 }
 
@@ -609,10 +573,10 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
         case SysmoduleHelpers::NascEnvironment::Prod:
             nasc_url = "nasc.nintendowifi.net";
             break;
-        case SysmoduleHelpers::NascEnvironment::Dev:
+        case SysmoduleHelpers::NascEnvironment::Test:
             nasc_url = "nasc.pretendo.cc";
             break;
-        case SysmoduleHelpers::NascEnvironment::Test:
+        case SysmoduleHelpers::NascEnvironment::Dev:
             nasc_url = "127.0.0.1";
             break;
     }
@@ -625,8 +589,8 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
     nasc_client.SetParameter("gamever", fmt::format("{:04X}", product_info.remaster_version));
     nasc_client.SetParameter("mediatype", 1);
     char makercd[3];
-    makercd[0] = (product_info.maker_code >> 8);
-    makercd[1] = (product_info.maker_code & 0xFF);
+    makercd[0] = (product_info.maker_code & 0xFF);
+    makercd[1] = (product_info.maker_code >> 8);
     makercd[2] = '\0';
     nasc_client.SetParameter("makercd", std::string(makercd));
     nasc_client.SetParameter("unitcd", (int)frd->my_data.profile.platform);
@@ -635,6 +599,28 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
                                                    mac[1], mac[2], mac[3], mac[4], mac[5]));
     nasc_client.SetParameter("bssid", std::string("000000000000"));
     nasc_client.SetParameter("apinfo", std::string("01:0000000000"));
+
+    Core::System& system = Core::System::GetInstance();
+    auto cfg = Service::CFG::GetModule(system);
+    ASSERT_MSG(cfg, "CFG Module missing!");
+
+    std::vector<u8> device_cert(sizeof(Service::CFG::LocalFriendCodeSeed_B));
+    Service::CFG::LocalFriendCodeSeed_B* device_cert_data =
+        reinterpret_cast<Service::CFG::LocalFriendCodeSeed_B*>(device_cert.data());
+    *device_cert_data = *cfg->GetLFCSData();
+    nasc_client.SetParameter("fcdcert", device_cert);
+    std::vector<u8> device_name;
+    for (u32 i = 0;
+         i < (sizeof(frd->my_data.screen_name) / sizeof(u16)) - 1; i++) {
+        u16_le unit = frd->my_data.screen_name[i];
+        if (!unit)
+            break;
+        device_name.push_back((u8)(unit & 0xFF));
+        device_name.push_back((u8)(unit >> 8));
+    }
+    nasc_client.SetParameter("devname", device_name);
+    nasc_client.SetParameter("servertype", std::string("L1"));
+    nasc_client.SetParameter("fpdver", fmt::format("{:04X}", frd->fpd_version));
 
     {
         time_t raw_time;
@@ -648,23 +634,6 @@ void Module::Interface::RequestGameAuthentication(Kernel::HLERequestContext& ctx
         nasc_client.SetParameter("devtime", std::string(time_buffer));
     }
 
-    std::vector<u8> device_cert(sizeof(SysmoduleHelpers::LocalFriendCodeSeed_B));
-    SysmoduleHelpers::LocalFriendCodeSeed_B* device_cert_data =
-        reinterpret_cast<SysmoduleHelpers::LocalFriendCodeSeed_B*>(device_cert.data());
-    *device_cert_data = SysmoduleHelpers::GetLFCS_B(frd->my_data.local_friend_code_seed);
-    nasc_client.SetParameter("fcdcert", device_cert);
-    std::vector<u8> device_name;
-    for (u32 i = 0;
-         i < (sizeof(frd->my_data.unk68) / sizeof(u16)) - 1; i++) {
-        u16_le unit = frd->my_data.unk68[i];
-        if (!unit)
-            break;
-        device_name.push_back((u8)(unit & 0xFF));
-        device_name.push_back((u8)(unit >> 8));
-    }
-    nasc_client.SetParameter("devname", device_name);
-    nasc_client.SetParameter("servertype", std::string("L1"));
-    nasc_client.SetParameter("fpdver", fmt::format("{:04X}", frd->fpd_version));
     nasc_client.SetParameter("lang",
                              fmt::format("{:02X}", frd->my_data.profile.language));
     nasc_client.SetParameter("region",
@@ -723,37 +692,40 @@ void Module::Interface::SetLocalAccountId(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx);
     u32 id = rp.Pop<u32>();
 
-    if (frd->my_data_handle != nullptr && frd->my_data_handle->IsOpen()) frd->my_data_handle->Close();
-    if (frd->account_handle != nullptr && frd->account_handle->IsOpen()) frd->account_handle->Close();
-    if (frd->friendlist_handle != nullptr && frd->friendlist_handle->IsOpen()) frd->friendlist_handle->Close();
+    // close any account data files if they arent a nullptr, then clear their data so they can be reloaded
+    if (frd->my_data_handle != nullptr) frd->my_data_handle->Close();
+    if (frd->account_handle != nullptr) frd->account_handle->Close();
+    if (frd->friendlist_handle != nullptr) frd->friendlist_handle->Close();
     frd->my_data = {};
     frd->account = {};
     frd->friendlist = {};
 
+    // if this function is being called and the config_handle is (somehow) a nullptr, load it
     if (frd->config_handle == nullptr) {
-        LoadFRDConfig(&frd->config, frd->config_handle);
+        LoadFRDConfig(frd->config, frd->config_handle, frd->file_sys_handle);
     }
+
+    // cast the input id to a struct and then set the current config id to it, then log the id it changed to
     frd->config.local_account_id = static_cast<SysmoduleHelpers::LocalAccountID>(id);
     LOG_INFO(Service_FRD, fmt::format("{}", frd->config.local_account_id).c_str());
 
-    if (frd->config_handle != nullptr && frd->config_handle->IsOpen()) {
-        LOG_INFO(Service_FRD, "writing to file");
-        frd->config_handle->Seek(0, 0);
-        frd->config_handle->WriteBytes(&frd->config, sizeof(FRDConfig));
-        frd->config_handle->Flush();
-        frd->config_handle->Close();
-        frd->config = {};
-        LoadFRDConfig(&frd->config, frd->config_handle);
+    // if the config handle isnt a nullptr), write the current config to the file and flush the buffer
+    if (frd->config_handle != nullptr) {
+        frd->config_handle->Write(0, sizeof(FRDConfig), 1, reinterpret_cast<u8 *>(&frd->config));
     }
-    LoadFRDSaves(frd->config.local_account_id, &frd->my_data, &frd->account, &frd->friendlist, frd->my_data_handle, frd->account_handle, frd->friendlist_handle);
+
+    // after that, reload the account saves based on the new account id and push RESULT_SUCCESS
+    LoadFRDSaves(frd->config.local_account_id, frd->my_data, frd->account, frd->friendlist, frd->my_data_handle, frd->account_handle, frd->friendlist_handle, frd->file_sys_handle);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
 }
 
 Module::Module(Core::System& system) : system(system) {
-    LoadFRDConfig(&config, config_handle);
-    LoadFRDSaves(config.local_account_id, &my_data, &account, &friendlist, my_data_handle, account_handle, friendlist_handle);
+    InitFileSys(file_sys_handle);
+
+    LoadFRDConfig(config, config_handle, file_sys_handle);
+    LoadFRDSaves(config.local_account_id, my_data, account, friendlist, my_data_handle, account_handle, friendlist_handle, file_sys_handle);
 };
 
 Module::~Module() = default;

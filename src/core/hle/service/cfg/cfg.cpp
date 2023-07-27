@@ -726,7 +726,29 @@ ResultCode Module::LoadConfigNANDSaveFile() {
     return FormatConfig();
 }
 
+ResultCode Module::LoadLFCSData() {
+    std::string lfcs_file = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir) + "LocalFriendCodeSeed_B";
+    if (FileUtil::Exists(lfcs_file)) {
+        FileUtil::IOFile file(lfcs_file, "rb");
+        if (file.IsOpen() && file.GetSize() == sizeof(LocalFriendCodeSeed_B)) {
+            file.ReadBytes(&localfriendcodeseed_b, sizeof(LocalFriendCodeSeed_B));
+        }
+        else {
+            LOG_ERROR(Service_FRD, "Failed to open LocalFriendCodeSeed_B file, using default");
+            return RESULT_UNKNOWN;
+        }
+    }
+    else {
+        localfriendcodeseed_b = LocalFriendCodeSeed_B();
+        LOG_INFO(Service_FRD, "No LocalFriendCodeSeed_B file found, using default");
+        return RESULT_UNKNOWN;
+    }
+
+    return RESULT_SUCCESS;
+}
+
 Module::Module() {
+    LoadLFCSData();
     LoadConfigNANDSaveFile();
     // Check the config savegame EULA Version and update it to 0x7F7F if necessary
     // so users will never get a promt to accept EULA
@@ -796,6 +818,10 @@ void Module::SetPreferredRegionCodes(std::span<const u32> region_codes) {
             SetSystemLanguage(adjusted_language);
         }
     }
+}
+
+LocalFriendCodeSeed_B *Module::GetLFCSData() {
+    return &localfriendcodeseed_b;
 }
 
 void Module::SetUsername(const std::u16string& name) {

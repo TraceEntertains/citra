@@ -22,6 +22,12 @@ class System;
 
 namespace Service::CFG {
 
+struct LocalFriendCodeSeed_B {
+    std::array<u8, 0x100> rsaSignature{};
+    u64_le bitflags{};
+    u64_le local_friend_code_seed{};
+};
+
 enum SystemModel {
     NINTENDO_3DS = 0,
     NINTENDO_3DS_XL = 1,
@@ -355,8 +361,14 @@ private:
      */
     ResultCode LoadConfigNANDSaveFile();
 
+    ResultCode LoadLFCSData();
+
+    LocalFriendCodeSeed_B localfriendcodeseed_b;
+
 public:
     u32 GetRegionValue();
+
+    LocalFriendCodeSeed_B *GetLFCSData();
 
     /**
      * Set the region codes preferred by the game so that CFG will adjust to it when the region

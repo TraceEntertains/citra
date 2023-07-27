@@ -1,8 +1,13 @@
+#pragma once
+
 #include "common/common_types.h"
 #include "core/core.h"
 #include "core/hle/ipc_helpers.h"
-#include "core/hle/service/service.h"
 #include "core/hle/kernel/thread.h"
+#include "core/file_sys/disk_archive.h"
+#include "core/file_sys/file_backend.h"
+#include "core/file_sys/archive_systemsavedata.h"
+#include "core/file_sys/errors.h"
 
 namespace SysmoduleHelpers {
 
@@ -250,11 +255,58 @@ namespace SysmoduleHelpers {
         friend class boost::serialization::access;
     };
 
-    struct LocalFriendCodeSeed_B {
-        std::array<u8, 0x100> rsaSignature{};
-        u64_le bitflags{};
-        u64_le local_friend_code_seed{};
-    };
+    // Load file helper
+    template <typename T>
+    bool LoadSave(u32 classSize, T &loadStruct, const char *path, std::unique_ptr<FileSys::FileBackend> &fileHandle, std::unique_ptr<FileSys::ArchiveBackend> &fileSysHandle) {
+        LOG_INFO(Service_FRD, path);
 
-    LocalFriendCodeSeed_B GetLFCS_B(u64_le local_friend_code_seed);
+        FileSys::Mode mode = {};
+        mode.write_flag.Assign(1);
+        mode.read_flag.Assign(1);
+        mode.create_flag.Assign(1);
+
+        auto fileResult = fileSysHandle->OpenFile(FileSys::Path(path), mode);
+        if (fileResult.Failed()) {
+            return false;
+        }
+
+        fileHandle = std::move(fileResult).Unwrap();
+        if (fileHandle->GetSize() != classSize) {
+            fileHandle->Close();
+            return false;
+        }
+
+        fileHandle->Read(0, classSize, reinterpret_cast<u8 *>(&loadStruct));
+        return true;
+    }
+
+    // Load friendlist file helper
+    template <typename T>
+    bool LoadFlexSave(u32 classSize, u32 checkSize, u32 arraySize, T &loadStruct, u32 *loadInt, const char *path, std::unique_ptr<FileSys::FileBackend> &fileHandle, std::unique_ptr<FileSys::ArchiveBackend> &fileSysHandle) {
+        LOG_INFO(Service_FRD, path);
+
+        FileSys::Mode mode = {};
+        mode.write_flag.Assign(1);
+        mode.read_flag.Assign(1);
+        mode.create_flag.Assign(1);
+
+        auto fileResult = fileSysHandle->OpenFile(FileSys::Path(path), mode);
+        if (fileResult.Failed()) {
+            return false;
+        }
+
+        fileHandle = std::move(fileResult).Unwrap();
+        if ((fileHandle->GetSize() % (classSize - checkSize)) != 0) {
+            fileHandle->Close();
+            return false;
+        }
+
+        fileHandle->Read(0, classSize, reinterpret_cast<u8 *>(&loadStruct));
+        if (fileHandle->GetSize() - checkSize <= 0) {
+            *loadInt = 0;
+        }
+
+        *loadInt = (fileHandle->GetSize() - (classSize - checkSize)) / arraySize;
+        return true;
+    }
 };
